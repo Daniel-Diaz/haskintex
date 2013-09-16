@@ -5,7 +5,7 @@ name:                haskintex
 version:             0.1.0.0
 synopsis:            Haskell Evaluation inside of LaTeX code.
 -- description:         
-homepage:            http://www.haskell.org/haskellwiki/haskintex
+homepage:            http://daniel-diaz.github.io/projects/haskintex
 license:             BSD3
 license-file:        LICENSE
 author:              Daniel Díaz
