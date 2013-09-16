@@ -12,6 +12,7 @@ import System.FilePath
 import System.Directory
 -- Text
 import Data.Text (Text,pack,unpack)
+import qualified Data.Text as T
 import qualified Data.Text.IO as T
 -- Transformers
 import Control.Applicative
@@ -54,8 +55,22 @@ evaluate modName = texmapM (\l -> isCommand "evalhaskell" l || isEnv "evalhaskel
     ghc e = do
        outputStr $ "Evaluation: " ++ e
        lift $ init <$> readProcess "ghc" [ "-e", e, modName ++ ".hs" ] []
-    f (TeXEnv  _ _ e)        = (verbatim . pack) <$> ghc (unpack $ render e)
-    f (TeXComm _ [FixArg e]) = (verb     . pack) <$> ghc (unpack $ render e)
+    f (TeXEnv  _ _ e)        = (verbatim . layout . pack) <$> ghc (unpack $ render e)
+    f (TeXComm _ [FixArg e]) = (verb     . pack         ) <$> ghc (unpack $ render e)
+
+maxLineLength :: Int
+maxLineLength = 60
+
+-- | Break lines longer than 'maxLineLenght'.
+layout :: Text -> Text
+layout = T.unlines . go . T.lines
+  where
+    go [] = []
+    go (t:ts) =
+      if T.length t > maxLineLength
+         then let (l,r) = T.splitAt maxLineLength t
+              in  l : go (r:ts)
+         else t : go ts
 
 -- Configuration
 
