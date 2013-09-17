@@ -4,7 +4,12 @@
 name:                haskintex
 version:             0.1.0.0
 synopsis:            Haskell Evaluation inside of LaTeX code.
--- description:         
+description:
+  The /haskintex/ program is a tool that reads a LaTeX file and evaluates Haskell expressions contained
+  in some specific commands and environments. It allows you to define your own functions, use any GHC Haskell language
+  extension and, in brief, anything you can do within Haskell. You can freely add any Haskell code you need, and make
+  this code appear /optionally/ in the LaTeX output. It is a tiny program, and therefore, easy to understand, use and
+  predict.
 homepage:            http://daniel-diaz.github.io/projects/haskintex
 license:             BSD3
 license-file:        LICENSE
@@ -13,7 +18,7 @@ maintainer:          dhelta.diaz@gmail.com
 -- copyright:           
 category:            LaTeX
 build-type:          Simple
--- extra-source-files:  
+extra-source-files:  README.md
 cabal-version:       >=1.10
 
 executable haskintex
