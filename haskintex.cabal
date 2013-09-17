@@ -8,6 +8,7 @@ description:
   this code appear /optionally/ in the LaTeX output. It is a tiny program, and therefore, easy to understand, use and
   predict.
 homepage:            http://daniel-diaz.github.io/projects/haskintex
+bug-reports:         https://github.com/Daniel-Diaz/haskintex/issues
 license:             BSD3
 license-file:        LICENSE
 author:              Daniel Díaz
@@ -21,13 +22,13 @@ cabal-version:       >=1.10
 
 executable haskintex
   main-is:             Main.hs
-  build-depends:       base >=4.6 && <4.7
+  build-depends:       base >= 4.6 && < 4.7
                ,       transformers == 0.3.*
-               ,       text
-               ,       directory
-               ,       filepath
-               ,       process
-               ,       HaTeX
-               ,       attoparsec
+               ,       text >= 0.11.2.3 && < 0.12
+               ,       directory >= 1.2.0.0 && < 1.3
+               ,       filepath >= 1.1.0.0 && < 1.4
+               ,       process >= 1.1.0.2 && < 1.2
+               ,       HaTeX >= 3.6 && < 3.9
+               ,       attoparsec >= 0.10.2.0 && < 0.11
   default-language:    Haskell2010
   ghc-options: -Wall
