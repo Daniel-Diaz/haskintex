@@ -26,6 +26,7 @@ executable haskintex
                ,       directory
                ,       filepath
                ,       process
-               ,       HaTeX >= 3.8.0.0
+               ,       HaTeX
+               ,       attoparsec
   -- hs-source-dirs:      
   default-language:    Haskell2010

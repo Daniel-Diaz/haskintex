@@ -1,10 +1,6 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
--- LaTeX
-import Text.LaTeX
-import Text.LaTeX.Base.Syntax
-import Text.LaTeX.Base.Parser
 -- System
 import System.Process
 import System.Environment (getArgs)
@@ -14,49 +10,92 @@ import System.Directory
 import Data.Text (Text,pack,unpack)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+-- Parser
+import Data.Attoparsec.Text
 -- Transformers
-import Control.Applicative
 import Control.Monad (when)
+import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
-import Control.Monad.Trans.Writer
+import Control.Monad.Trans.State
+-- LaTeX
+import Text.LaTeX
+-- Utils
+import Control.Applicative
+import Data.Foldable (foldMap)
 
-isCommand :: String -> LaTeX -> Bool
-isCommand str (TeXComm n _) = str == n
-isCommand _ _ = False
+data Syntax =
+    WriteLaTeX   Text
+  | WriteHaskell Bool Text -- False for Hidden, True for Visible
+  | EvalHaskell  Bool Text -- False for Command, True for Environment
+  | Sequence     [Syntax]
+    deriving Show
 
-isEnv :: String -> LaTeX -> Bool
-isEnv str (TeXEnv n _ _) = str == n
-isEnv _ _ = False
+extractCode :: Syntax -> Text
+extractCode (WriteHaskell _ t) = t
+extractCode (Sequence xs) = foldMap extractCode xs
+extractCode _ = mempty
 
-extractCode :: Bool -> LaTeX -> Writer Text LaTeX
-extractCode v = texmapM (isEnv "writehaskell") f
+parseSyntax :: Bool -> Parser Syntax
+parseSyntax v = fmap Sequence $ many $ choice [ p_writehaskell v, p_evalhaskell, p_writelatex ]
+
+p_writehaskell :: Bool -> Parser Syntax
+p_writehaskell v = do
+  string "\\begin{writehaskell}"
+  b <- choice [ string "[hidden]"  >> return False
+              , string "[visible]" >> return True
+              , return v ]
+  h <- manyTill anyChar $ try $ string "\\end{writehaskell}"
+  return $ WriteHaskell b $ pack h
+
+p_evalhaskell :: Parser Syntax
+p_evalhaskell = choice [ p_evalhaskellenv, p_evalhaskellcomm ]
+
+p_evalhaskellenv :: Parser Syntax
+p_evalhaskellenv = do
+  string "\\begin{evalhaskell}"
+  h <- manyTill anyChar $ try $ string "\\end{evalhaskell}"
+  return $ EvalHaskell True $ pack h
+
+p_evalhaskellcomm :: Parser Syntax
+p_evalhaskellcomm = do
+  string "\\evalhaskell{"
+  h <- manyTill anyChar $ char '}'
+  return $ EvalHaskell False $ pack h
+
+p_writelatex :: Parser Syntax
+p_writelatex = (WriteLaTeX . pack) <$>
+  many1 (p_other >>= \b -> if b then anyChar else fail "stop write latex")
   where
-    f (TeXEnv _ as b) = do
-      let rb = render b
-      tell rb
-      return $
-        if v then if as == [OptArg "hidden"]
-                     then mempty
-                     else verbatim rb
-             else if as == [OptArg "visible"]
-                     then verbatim rb
-                     else mempty
-    f l = return l
+    p_other =
+      choice [ string "\\begin{writehaskell}" >> return False
+             , string "\\begin{evalhaskell}"  >> return False
+             , string "\\evalhaskell"         >> return False
+             , return True
+             ]
 
 moduleHeader :: String -> Text -> Text
 moduleHeader str t = pack ("module " ++ str ++ " where\n\n") <> t
 
 -- Evaluation
 
-evaluate :: String -> LaTeX -> Haskintex LaTeX
-evaluate modName = texmapM (\l -> isCommand "evalhaskell" l || isEnv "evalhaskell" l) f
+evalCode :: String -> Syntax -> Haskintex Text
+evalCode modName = go
   where
-    i = "import " ++ modName
-    ghc e = do
-       outputStr $ "Evaluation: " ++ e
-       lift $ init <$> readProcess "ghc" [ "-e", e, modName ++ ".hs" ] []
-    f (TeXEnv  _ _ e)        = (verbatim . layout . pack) <$> ghc (unpack $ render e)
-    f (TeXComm _ [FixArg e]) = (verb     . pack         ) <$> ghc (unpack $ render e)
+    go (WriteLaTeX t) = return t
+    go (WriteHaskell b t) =
+         return $ if b then render (verbatim t :: LaTeX)
+                       else mempty
+    go (EvalHaskell b t) =
+         let f :: Text -> LaTeX
+             f = if b then verbatim . layout else verb
+         in (render . f . pack) <$> ghc modName t
+    go (Sequence xs) = mconcat <$> mapM go xs
+
+ghc :: String -> Text -> Haskintex String
+ghc modName e = do
+  let e' = unpack $ T.strip e
+  outputStr $ "Evaluation: " ++ e'
+  lift $ init <$> readProcess "ghc" [ "-e", e', modName ++ ".hs" ] []
 
 maxLineLength :: Int
 maxLineLength = 60
@@ -113,21 +152,21 @@ haskintexFile :: FilePath -> Haskintex ()
 haskintexFile fp = do
   outputStr $ "Reading " ++ fp ++ "..."
   t <- lift $ T.readFile fp
-  case latexAtOnce t of
+  vFlag <- visibleFlag <$> ask
+  case parseOnly (parseSyntax vFlag) t of
     Left err -> outputStr $ "Reading of " ++ fp ++ " failed: " ++ err
-    Right l -> do
+    Right s -> do
       let modName = ("Haskintex_" ++) $ dropExtension $ takeFileName fp
       outputStr $ "Creating " ++ modName ++ " module..."
-      v <- visibleFlag <$> ask
-      let (l',hs) = runWriter $ extractCode v l
+      let hs = extractCode s
       lift $ T.writeFile (modName ++ ".hs") $ moduleHeader modName hs
       outputStr $ "Evaluating expressions in " ++ fp ++ "..."
-      l'' <- evaluate modName l'
+      l <- evalCode modName s
       let fp' = "haskintex_" ++ fp
       outputStr $ "Writing final file at " ++ fp' ++ "..."
-      lift $ T.writeFile fp' $ render l''
-      k <- keepFlag <$> ask
-      when (not k) $ do
+      lift $ T.writeFile fp' l
+      kFlag <- keepFlag <$> ask
+      when (not kFlag) $ do
         outputStr $ "Removing Haskell Source file " ++ modName ++ ".hs..."
         lift $ removeFile $ modName ++ ".hs"
       outputStr $ "End of processing of file " ++ fp ++ "."
