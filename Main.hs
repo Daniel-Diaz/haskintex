@@ -1,22 +1,23 @@
 
 {-# LANGUAGE OverloadedStrings #-}
 
+module Main (main) where
+
 -- System
 import System.Process
 import System.Environment (getArgs)
 import System.FilePath
 import System.Directory
 -- Text
-import Data.Text (Text,pack,unpack)
+import Data.Text (pack,unpack)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 -- Parser
 import Data.Attoparsec.Text
 -- Transformers
-import Control.Monad (when)
+import Control.Monad (when,unless)
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
-import Control.Monad.Trans.State
 -- LaTeX
 import Text.LaTeX
 -- Utils
@@ -40,7 +41,7 @@ parseSyntax v = fmap Sequence $ many $ choice [ p_writehaskell v, p_evalhaskell,
 
 p_writehaskell :: Bool -> Parser Syntax
 p_writehaskell v = do
-  string "\\begin{writehaskell}"
+  _ <- string "\\begin{writehaskell}"
   b <- choice [ string "[hidden]"  >> return False
               , string "[visible]" >> return True
               , return v ]
@@ -52,13 +53,13 @@ p_evalhaskell = choice [ p_evalhaskellenv, p_evalhaskellcomm ]
 
 p_evalhaskellenv :: Parser Syntax
 p_evalhaskellenv = do
-  string "\\begin{evalhaskell}"
+  _ <- string "\\begin{evalhaskell}"
   h <- manyTill anyChar $ try $ string "\\end{evalhaskell}"
   return $ EvalHaskell True $ pack h
 
 p_evalhaskellcomm :: Parser Syntax
 p_evalhaskellcomm = do
-  string "\\evalhaskell{"
+  _ <- string "\\evalhaskell{"
   h <- manyTill anyChar $ char '}'
   return $ EvalHaskell False $ pack h
 
@@ -149,24 +150,36 @@ haskintex :: Haskintex ()
 haskintex = ask >>= mapM_ haskintexFile . inputs
 
 haskintexFile :: FilePath -> Haskintex ()
-haskintexFile fp = do
+haskintexFile fp_ = do
+  -- If the given file does not exist, try adding '.tex'.
+  b <- lift $ doesFileExist fp_
+  let fp = if b then fp_ else fp_ ++ ".tex"
+  -- Read visible flag. It will be required in the file parsing.
+  vFlag <- visibleFlag <$> ask
+  outputStr $ "Visible flag: " ++ (if vFlag then "enabled" else "disabled") ++ "."
+  -- File parsing.
   outputStr $ "Reading " ++ fp ++ "..."
   t <- lift $ T.readFile fp
-  vFlag <- visibleFlag <$> ask
   case parseOnly (parseSyntax vFlag) t of
     Left err -> outputStr $ "Reading of " ++ fp ++ " failed: " ++ err
     Right s -> do
+      -- First pass: Create haskell source from the code obtained with 'extractCode'.
       let modName = ("Haskintex_" ++) $ dropExtension $ takeFileName fp
-      outputStr $ "Creating " ++ modName ++ " module..."
+      outputStr $ "Creating Haskell source file " ++ modName ++ ".hs..."
       let hs = extractCode s
       lift $ T.writeFile (modName ++ ".hs") $ moduleHeader modName hs
+      -- Second pass: Evaluate expressions using 'evalCode'.
       outputStr $ "Evaluating expressions in " ++ fp ++ "..."
       l <- evalCode modName s
       let fp' = "haskintex_" ++ fp
+      -- Write final output.
       outputStr $ "Writing final file at " ++ fp' ++ "..."
       lift $ T.writeFile fp' l
+      -- If the keep flag is not set, remove the haskell source file.
       kFlag <- keepFlag <$> ask
-      when (not kFlag) $ do
-        outputStr $ "Removing Haskell Source file " ++ modName ++ ".hs..."
+      unless kFlag $ do
+        outputStr $ "Removing Haskell source file " ++ modName ++ ".hs "
+                  ++ "(use -keep to avoid this)..."
         lift $ removeFile $ modName ++ ".hs"
+      -- End.
       outputStr $ "End of processing of file " ++ fp ++ "."

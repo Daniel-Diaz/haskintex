@@ -1,0 +1,14 @@
+\documentclass{article}
+\begin{document}
+
+Recursive definition of the factorial function in Haskell.
+
+\begin{writehaskell}[visible]
+fact :: Int -> Int
+fact 0 = 1
+fact n = n * fact (n-1)
+\end{writehaskell}
+
+The factorial function grows really fast. While 5 factorial is
+\evalhaskell{fact 5}, 10 factorial is \evalhaskell{fact 10}.
+\end{document}
