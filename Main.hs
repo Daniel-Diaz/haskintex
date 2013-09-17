@@ -24,17 +24,15 @@ import Text.LaTeX
 import Control.Applicative
 import Data.Foldable (foldMap)
 
+-- Syntax
+
 data Syntax =
     WriteLaTeX   Text
   | WriteHaskell Bool Text -- False for Hidden, True for Visible
   | EvalHaskell  Bool Text -- False for Command, True for Environment
   | Sequence     [Syntax]
-    deriving Show
 
-extractCode :: Syntax -> Text
-extractCode (WriteHaskell _ t) = t
-extractCode (Sequence xs) = foldMap extractCode xs
-extractCode _ = mempty
+-- Parsing
 
 parseSyntax :: Bool -> Parser Syntax
 parseSyntax v = fmap Sequence $ many $ choice [ p_writehaskell v, p_evalhaskell, p_writelatex ]
@@ -74,10 +72,14 @@ p_writelatex = (WriteLaTeX . pack) <$>
              , return True
              ]
 
-moduleHeader :: String -> Text -> Text
-moduleHeader str t = pack ("module " ++ str ++ " where\n\n") <> t
+-- PASS 1: Extract code from processed Syntax.
 
--- Evaluation
+extractCode :: Syntax -> Text
+extractCode (WriteHaskell _ t) = t
+extractCode (Sequence xs) = foldMap extractCode xs
+extractCode _ = mempty
+
+-- PASS 2: Evaluate Haskell expressions from processed Syntax.
 
 evalCode :: String -> Syntax -> Haskintex Text
 evalCode modName = go
@@ -167,7 +169,8 @@ haskintexFile fp_ = do
       let modName = ("Haskintex_" ++) $ dropExtension $ takeFileName fp
       outputStr $ "Creating Haskell source file " ++ modName ++ ".hs..."
       let hs = extractCode s
-      lift $ T.writeFile (modName ++ ".hs") $ moduleHeader modName hs
+          moduleHeader = pack $ "module " ++ modName ++ " where\n\n"
+      lift $ T.writeFile (modName ++ ".hs") $ moduleHeader <> hs
       -- Second pass: Evaluate expressions using 'evalCode'.
       outputStr $ "Evaluating expressions in " ++ fp ++ "..."
       l <- evalCode modName s
