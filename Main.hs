@@ -31,6 +31,7 @@ data Syntax =
   | WriteHaskell Bool Text -- False for Hidden, True for Visible
   | EvalHaskell  Bool Text -- False for Command, True for Environment
   | Sequence     [Syntax]
+    deriving Show
 
 -- Parsing
 
@@ -43,7 +44,7 @@ p_writehaskell v = do
   b <- choice [ string "[hidden]"  >> return False
               , string "[visible]" >> return True
               , return v ]
-  h <- manyTill anyChar $ try $ string "\\end{writehaskell}"
+  h <- manyTill anyChar $ string "\\end{writehaskell}"
   return $ WriteHaskell b $ pack h
 
 p_evalhaskell :: Parser Syntax
@@ -52,7 +53,7 @@ p_evalhaskell = choice [ p_evalhaskellenv, p_evalhaskellcomm ]
 p_evalhaskellenv :: Parser Syntax
 p_evalhaskellenv = do
   _ <- string "\\begin{evalhaskell}"
-  h <- manyTill anyChar $ try $ string "\\end{evalhaskell}"
+  h <- manyTill anyChar $ string "\\end{evalhaskell}"
   return $ EvalHaskell True $ pack h
 
 p_evalhaskellcomm :: Parser Syntax
@@ -66,9 +67,9 @@ p_writelatex = (WriteLaTeX . pack) <$>
   many1 (p_other >>= \b -> if b then anyChar else fail "stop write latex")
   where
     p_other =
-      choice [ string "\\begin{writehaskell}" >> return False
-             , string "\\begin{evalhaskell}"  >> return False
-             , string "\\evalhaskell"         >> return False
+      choice [ string "\\begin{writehaskell}" >> return False -- starts p_writehaskell
+             , string "\\begin{evalhaskell}"  >> return False -- starts p_evalhaskellenv
+             , string "\\evalhaskell"         >> return False -- starts p_evalhaskellcomm
              , return True
              ]
 
