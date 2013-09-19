@@ -31,7 +31,7 @@ data Syntax =
   | WriteHaskell Bool Text -- False for Hidden, True for Visible
   | EvalHaskell  Bool Text -- False for Command, True for Environment
   | Sequence     [Syntax]
-    deriving Show
+    deriving Show -- Show instance for debugging.
 
 -- Parsing
 
@@ -43,7 +43,7 @@ p_writehaskell v = do
   _ <- string "\\begin{writehaskell}"
   b <- choice [ string "[hidden]"  >> return False
               , string "[visible]" >> return True
-              , return v ]
+              , return v ] -- When no option is given, take the default.
   h <- manyTill anyChar $ string "\\end{writehaskell}"
   return $ WriteHaskell b $ pack h
 
@@ -58,9 +58,29 @@ p_evalhaskellenv = do
 
 p_evalhaskellcomm :: Parser Syntax
 p_evalhaskellcomm = do
-  _ <- string "\\evalhaskell{"
-  h <- manyTill anyChar $ char '}'
+  _  <- string "\\evalhaskell{"
+  h  <- p_haskell 0
   return $ EvalHaskell False $ pack h
+
+p_haskell :: Int -> Parser String
+p_haskell n = choice [
+    do _ <- char '{'
+       ('{':) <$> p_haskell (n+1)
+  , do _ <- char '}'
+       if n == 0
+          then return []
+          else ('}':) <$> p_haskell (n-1)
+  , do _ <- char '\"'
+       liftA2 (++) (('\"':) <$> p_string) (p_haskell n)
+  , liftA2 (:) anyChar (p_haskell n)
+    ]
+
+p_string :: Parser String
+p_string = choice [
+    liftA2 (++) (char '\\' >> char '\"' >> return "\\\"") p_string
+  , liftA2 (:) (char '\"') (return [])
+  , liftA2 (:) anyChar p_string
+    ]  
 
 p_writelatex :: Parser Syntax
 p_writelatex = (WriteLaTeX . pack) <$>
