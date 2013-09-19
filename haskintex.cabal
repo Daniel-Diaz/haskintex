@@ -1,5 +1,5 @@
 name:                haskintex
-version:             0.1.1.0
+version:             0.1.0.1
 synopsis:            Haskell Evaluation inside of LaTeX code.
 description:
   The /haskintex/ program is a tool that reads a LaTeX file and evaluates Haskell expressions contained
