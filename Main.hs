@@ -19,10 +19,13 @@ import Control.Monad (when,unless)
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
 -- LaTeX
-import Text.LaTeX
+import Text.LaTeX hiding (version)
 -- Utils
 import Control.Applicative
 import Data.Foldable (foldMap)
+-- Paths
+import Paths_haskintex
+import Data.Version (showVersion)
 
 -- Syntax
 
@@ -102,16 +105,20 @@ extractCode _ = mempty
 
 -- PASS 2: Evaluate Haskell expressions from processed Syntax.
 
-evalCode :: String -> Syntax -> Haskintex Text
-evalCode modName = go
+evalCode :: String -> Bool -> Syntax -> Haskintex Text
+evalCode modName mFlag = go
   where
     go (WriteLaTeX t) = return t
     go (WriteHaskell b t) =
-         return $ if b then render (verbatim t :: LaTeX)
+         return $ if b then if mFlag
+                               then t
+                               else render (verbatim t :: LaTeX)
                        else mempty
     go (EvalHaskell b t) =
          let f :: Text -> LaTeX
-             f = if b then verbatim . layout else verb
+             f = if mFlag
+                    then raw
+                    else if b then verbatim . layout else verb
          in (render . f . pack) <$> ghc modName t
     go (Sequence xs) = mconcat <$> mapM go xs
 
@@ -138,10 +145,12 @@ layout = T.unlines . go . T.lines
 -- Configuration
 
 data Conf = Conf
-  { keepFlag :: Bool
+  { keepFlag    :: Bool
   , visibleFlag :: Bool
   , verboseFlag :: Bool
-  , inputs :: [FilePath]
+  , manualFlag  :: Bool
+  , helpFlag    :: Bool
+  , inputs      :: [FilePath]
     }
 
 isArg :: String -> Bool
@@ -153,6 +162,8 @@ readConf xs =
   Conf ("-keep" `elem` xs)
        ("-visible" `elem` xs)
        ("-verbose" `elem` xs)
+       ("-manual" `elem` xs)
+       ("-help" `elem` xs)
        (filter (not . isArg) xs)
 
 -- Haskintex
@@ -170,7 +181,11 @@ main :: IO ()
 main = (readConf <$> getArgs) >>= runReaderT haskintex
 
 haskintex :: Haskintex ()
-haskintex = ask >>= mapM_ haskintexFile . inputs
+haskintex = do
+  flags <- ask
+  if helpFlag flags
+     then lift $ putStr help
+     else mapM_ haskintexFile $ inputs flags
 
 haskintexFile :: FilePath -> Haskintex ()
 haskintexFile fp_ = do
@@ -180,6 +195,9 @@ haskintexFile fp_ = do
   -- Read visible flag. It will be required in the file parsing.
   vFlag <- visibleFlag <$> ask
   outputStr $ "Visible flag: " ++ (if vFlag then "enabled" else "disabled") ++ "."
+  -- Read manual flag. It will be required in the second pass.
+  mFlag <- manualFlag <$> ask
+  outputStr $ "Manual flag: " ++ (if mFlag then "enabled" else "disabled") ++ "."
   -- File parsing.
   outputStr $ "Reading " ++ fp ++ "..."
   t <- lift $ T.readFile fp
@@ -194,7 +212,7 @@ haskintexFile fp_ = do
       lift $ T.writeFile (modName ++ ".hs") $ moduleHeader <> hs
       -- Second pass: Evaluate expressions using 'evalCode'.
       outputStr $ "Evaluating expressions in " ++ fp ++ "..."
-      l <- evalCode modName s
+      l <- evalCode modName mFlag s
       let fp' = "haskintex_" ++ fp
       -- Write final output.
       outputStr $ "Writing final file at " ++ fp' ++ "..."
@@ -207,3 +225,40 @@ haskintexFile fp_ = do
         lift $ removeFile $ modName ++ ".hs"
       -- End.
       outputStr $ "End of processing of file " ++ fp ++ "."
+
+-- HELP
+
+help :: String
+help = unlines [
+    "You are using haskintex version " ++ showVersion version ++ "."
+  , "http://daniel-diaz.github.io/projects/haskintex"
+  , ""
+  , "Usage and flags:"
+  , "Any argument passed to haskintex that starts with '-' will be considered"
+  , "a flag. Otherwise, it will be considered an input file. Every input file"
+  , "will be processed with the same set of flags, which will include all the"
+  , "flags passed in the call. This is the list of flags supported by haskintex:"
+  , ""
+  , "  -keep     haskintex creates an intermmediate Haskell file before"
+  , "            evaluating any expressions. By default, this file is "
+  , "            eliminated after processing the file. Pass this flag to"
+  , "            keep the file."
+  , ""
+  , "  -visible  By default, code written inside a writehaskell environment"
+  , "            is not shown in the LaTeX output. This flag changes the"
+  , "            default."
+  , ""
+  , "  -verbose  If this flag is enabled, haskintex will print information"
+  , "            about its own execution while running."
+  , ""
+  , "  -manual   By default, Haskell expressions, either from writehaskell "
+  , "            or evalhaskell, appear in the LaTeX output inside verb or"
+  , "            verbatim declarations. If this flag is passed, neither verb"
+  , "            nor verbatim will be used. The code will be written as text "
+  , "            as it is. The user will decide how to handle it."
+  , ""
+  , "  -help     This flags cancels any other flag and input files and makes"
+  , "            the program simply show this help message."
+  , ""
+  , "Any unsupported flag will be ignored."
+  ]
