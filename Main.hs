@@ -26,9 +26,22 @@ import Data.Foldable (foldMap)
 -- Paths
 import Paths_haskintex
 import Data.Version (showVersion)
+-- Lists
+import Data.List (intersperse)
 
 -- Syntax
 
+-- | The 'Syntax' datatype describes how haskintex see a LaTeX
+--   file. When haskintex processes an input file, it parsers
+--   to this structure. It differentiates three things:
+--
+-- * writehaskell environments (WriteHaskell), either marked
+--   visible or not.
+--
+-- * evalhaskell commands and environments (EvalHaskell).
+--
+-- * Anything else (WriteLaTeX).
+--
 data Syntax =
     WriteLaTeX   Text
   | WriteHaskell Bool Text -- False for Hidden, True for Visible
@@ -145,26 +158,32 @@ layout = T.unlines . go . T.lines
 -- Configuration
 
 data Conf = Conf
-  { keepFlag    :: Bool
-  , visibleFlag :: Bool
-  , verboseFlag :: Bool
-  , manualFlag  :: Bool
-  , helpFlag    :: Bool
-  , inputs      :: [FilePath]
+  { keepFlag     :: Bool
+  , visibleFlag  :: Bool
+  , verboseFlag  :: Bool
+  , manualFlag   :: Bool
+  , helpFlag     :: Bool
+  , unknownFlags :: [String]
+  , inputs       :: [FilePath]
     }
 
-isArg :: String -> Bool
-isArg [] = False
-isArg (x:_) = x == '-'
-
 readConf :: [String] -> Conf
-readConf xs =
-  Conf ("-keep" `elem` xs)
-       ("-visible" `elem` xs)
-       ("-verbose" `elem` xs)
-       ("-manual" `elem` xs)
-       ("-help" `elem` xs)
-       (filter (not . isArg) xs)
+readConf = go $ Conf False False False False False [] []
+  where
+    go c [] = c
+    go c (x:xs) =
+       case x of
+        -- Arguments starting with '-' are considered a flag.
+        ('-':flag) ->
+           case flag of
+             "keep"    -> go (c {keepFlag    = True}) xs
+             "visible" -> go (c {visibleFlag = True}) xs
+             "verbose" -> go (c {verboseFlag = True}) xs
+             "manual"  -> go (c {manualFlag  = True}) xs
+             "help"    -> go (c {helpFlag    = True}) xs
+             _         -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
+        -- Otherwise, an input file.
+        _ -> go (c {inputs = inputs c ++ [x]}) xs
 
 -- Haskintex
 
@@ -185,7 +204,10 @@ haskintex = do
   flags <- ask
   if helpFlag flags
      then lift $ putStr help
-     else mapM_ haskintexFile $ inputs flags
+     else do let xs = inputs flags
+             if null xs
+                then lift $ putStr noFiles
+                else mapM_ haskintexFile xs
 
 haskintexFile :: FilePath -> Haskintex ()
 haskintexFile fp_ = do
@@ -198,6 +220,10 @@ haskintexFile fp_ = do
   -- Read manual flag. It will be required in the second pass.
   mFlag <- manualFlag <$> ask
   outputStr $ "Manual flag: " ++ (if mFlag then "enabled" else "disabled") ++ "."
+  -- Other unknown flags passed.
+  uFlags <- unknownFlags <$> ask
+  unless (null uFlags) $
+    outputStr $ "Unsupported flags: " ++ (concat $ intersperse ", " uFlags) ++ "."
   -- File parsing.
   outputStr $ "Reading " ++ fp ++ "..."
   t <- lift $ T.readFile fp
@@ -226,7 +252,7 @@ haskintexFile fp_ = do
       -- End.
       outputStr $ "End of processing of file " ++ fp ++ "."
 
--- HELP
+-- MESSAGES
 
 help :: String
 help = unlines [
@@ -257,8 +283,11 @@ help = unlines [
   , "            nor verbatim will be used. The code will be written as text "
   , "            as it is. The user will decide how to handle it."
   , ""
-  , "  -help     This flags cancels any other flag and input files and makes"
+  , "  -help     This flags cancels any other flag or input file and makes"
   , "            the program simply show this help message."
   , ""
   , "Any unsupported flag will be ignored."
   ]
+
+noFiles :: String
+noFiles = "No input file given.\n"
