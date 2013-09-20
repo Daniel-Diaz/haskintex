@@ -4,7 +4,7 @@
 module Main (main) where
 
 -- System
-import System.Process
+import System.Process (readProcess)
 import System.Environment (getArgs)
 import System.FilePath
 import System.Directory
@@ -20,6 +20,7 @@ import Control.Monad.Trans.Class
 import Control.Monad.Trans.Reader
 -- LaTeX
 import Text.LaTeX hiding (version)
+import Text.LaTeX.Base.Syntax
 -- Utils
 import Control.Applicative
 import Data.Foldable (foldMap)
@@ -118,20 +119,24 @@ extractCode _ = mempty
 
 -- PASS 2: Evaluate Haskell expressions from processed Syntax.
 
-evalCode :: String -> Bool -> Syntax -> Haskintex Text
-evalCode modName mFlag = go
+evalCode :: String -> Bool -> Bool -> Syntax -> Haskintex Text
+evalCode modName mFlag lhsFlag = go
   where
     go (WriteLaTeX t) = return t
     go (WriteHaskell b t) =
-         return $ if b then if mFlag
-                               then t
-                               else render (verbatim t :: LaTeX)
-                       else mempty
-    go (EvalHaskell b t) =
          let f :: Text -> LaTeX
-             f = if mFlag
-                    then raw
-                    else if b then verbatim . layout else verb
+             f x | not b = mempty
+                 | mFlag = raw x
+                 | lhsFlag = TeXEnv "code" [] $ raw x
+                 | otherwise = verbatim x
+         in return $ render $ f t
+    go (EvalHaskell env t) =
+         let f :: Text -> LaTeX
+             f x | mFlag = raw x -- Manual flag overrides lhs2tex flag behavior
+                 | env && lhsFlag = TeXEnv "code" [] $ raw x
+                 | lhsFlag = raw $ "|" <> x <> "|"
+                 | env = verbatim $ layout x
+                 | otherwise = verb x
          in (render . f . pack) <$> ghc modName t
     go (Sequence xs) = mconcat <$> mapM go xs
 
@@ -163,12 +168,25 @@ data Conf = Conf
   , verboseFlag  :: Bool
   , manualFlag   :: Bool
   , helpFlag     :: Bool
+  , lhs2texFlag  :: Bool
+  , stdoutFlag   :: Bool
   , unknownFlags :: [String]
   , inputs       :: [FilePath]
     }
 
+supportedFlags :: [(String,Conf -> Bool)]
+supportedFlags =
+  [ ("keep", keepFlag)
+  , ("visible", visibleFlag)
+  , ("verbose", verboseFlag)
+  , ("manual", manualFlag)
+  , ("help", helpFlag)
+  , ("lhs2tex", lhs2texFlag)
+  , ("stdout", stdoutFlag)
+    ]
+
 readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False [] []
+readConf = go $ Conf False False False False False False False [] []
   where
     go c [] = c
     go c (x:xs) =
@@ -181,6 +199,8 @@ readConf = go $ Conf False False False False False [] []
              "verbose" -> go (c {verboseFlag = True}) xs
              "manual"  -> go (c {manualFlag  = True}) xs
              "help"    -> go (c {helpFlag    = True}) xs
+             "lhs2tex" -> go (c {lhs2texFlag = True}) xs
+             "stdout"  -> go (c {stdoutFlag  = True}) xs
              _         -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
         -- Otherwise, an input file.
         _ -> go (c {inputs = inputs c ++ [x]}) xs
@@ -209,23 +229,30 @@ haskintex = do
                 then lift $ putStr noFiles
                 else mapM_ haskintexFile xs
 
+commas :: [String] -> String
+commas = concat . intersperse ", "
+
+showEnabledFlags :: Haskintex ()
+showEnabledFlags = do
+  c <- ask
+  outputStr $ "Enabled flags: "
+           ++ commas (foldr (\(str,f) xs -> if f c then str : xs else xs) [] supportedFlags)
+           ++ "."
+
 haskintexFile :: FilePath -> Haskintex ()
 haskintexFile fp_ = do
   -- If the given file does not exist, try adding '.tex'.
   b <- lift $ doesFileExist fp_
   let fp = if b then fp_ else fp_ ++ ".tex"
-  -- Read visible flag. It will be required in the file parsing.
-  vFlag <- visibleFlag <$> ask
-  outputStr $ "Visible flag: " ++ (if vFlag then "enabled" else "disabled") ++ "."
-  -- Read manual flag. It will be required in the second pass.
-  mFlag <- manualFlag <$> ask
-  outputStr $ "Manual flag: " ++ (if mFlag then "enabled" else "disabled") ++ "."
+  -- Report enabled flags
+  showEnabledFlags
   -- Other unknown flags passed.
   uFlags <- unknownFlags <$> ask
   unless (null uFlags) $
-    outputStr $ "Unsupported flags: " ++ (concat $ intersperse ", " uFlags) ++ "."
+    outputStr $ "Unsupported flags: " ++ commas uFlags ++ "."
   -- File parsing.
   outputStr $ "Reading " ++ fp ++ "..."
+  vFlag <- visibleFlag <$> ask
   t <- lift $ T.readFile fp
   case parseOnly (parseSyntax vFlag) t of
     Left err -> outputStr $ "Reading of " ++ fp ++ " failed: " ++ err
@@ -238,11 +265,17 @@ haskintexFile fp_ = do
       lift $ T.writeFile (modName ++ ".hs") $ moduleHeader <> hs
       -- Second pass: Evaluate expressions using 'evalCode'.
       outputStr $ "Evaluating expressions in " ++ fp ++ "..."
-      l <- evalCode modName mFlag s
-      let fp' = "haskintex_" ++ fp
+      mFlag <- manualFlag <$> ask
+      lhsFlag <- lhs2texFlag <$> ask
+      l <- evalCode modName mFlag lhsFlag s
       -- Write final output.
-      outputStr $ "Writing final file at " ++ fp' ++ "..."
-      lift $ T.writeFile fp' l
+      outFlag <- stdoutFlag <$> ask
+      if outFlag
+         then do outputStr "Printing final output to the screen..."
+                 lift $ T.putStr l
+         else do let fp' = "haskintex_" ++ fp
+                 outputStr $ "Writing final file at " ++ fp' ++ "..."
+                 lift $ T.writeFile fp' l
       -- If the keep flag is not set, remove the haskell source file.
       kFlag <- keepFlag <$> ask
       unless kFlag $ do
@@ -285,6 +318,12 @@ help = unlines [
   , ""
   , "  -help     This flags cancels any other flag or input file and makes"
   , "            the program simply show this help message."
+  , ""
+  , "  -stdout   Instead of writing the output to a file, send it to the"
+  , "            standard output stream (stdout)."
+  , ""
+  , "  -lhs2tex  Instead of using verb or verbatim declarations, format the"
+  , "            output using the syntax accepted by lhs2TeX."
   , ""
   , "Any unsupported flag will be ignored."
   ]
