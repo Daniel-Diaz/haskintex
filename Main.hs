@@ -239,6 +239,14 @@ showEnabledFlags = do
            ++ commas (foldr (\(str,f) xs -> if f c then str : xs else xs) [] supportedFlags)
            ++ "."
 
+reportWarnings :: Haskintex ()
+reportWarnings = do
+  -- Combination of manual and lhs2tex flags.
+  manFlag <- manualFlag  <$> ask
+  lhsFlag <- lhs2texFlag <$> ask
+  when (manFlag && lhsFlag) $
+    outputStr "Warning: lhs2tex flag is useless in presence of manual flag."
+
 haskintexFile :: FilePath -> Haskintex ()
 haskintexFile fp_ = do
   -- If the given file does not exist, try adding '.tex'.
@@ -246,6 +254,8 @@ haskintexFile fp_ = do
   let fp = if b then fp_ else fp_ ++ ".tex"
   -- Report enabled flags
   showEnabledFlags
+  -- Warnings
+  reportWarnings
   -- Other unknown flags passed.
   uFlags <- unknownFlags <$> ask
   unless (null uFlags) $
@@ -271,7 +281,7 @@ haskintexFile fp_ = do
       -- Write final output.
       outFlag <- stdoutFlag <$> ask
       if outFlag
-         then do outputStr "Printing final output to the screen..."
+         then do outputStr "Sending final output to stdout..."
                  lift $ T.putStr l
          else do let fp' = "haskintex_" ++ fp
                  outputStr $ "Writing final file at " ++ fp' ++ "..."
