@@ -1,0 +1,26 @@
+\documentclass{article}
+\usepackage{tikz}
+\usepackage[utf8]{inputenc}
+\author{Daniel Díaz}
+\title{Embedding HaTeX in \emph{haskintex}}
+\begin{document}
+\maketitle
+Below is the \emph{Spira Mirabilis} inserted using the HaTeX
+package.
+\begin{writehaskell}
+import Text.LaTeX
+import Text.LaTeX.Packages.TikZ.Simple
+
+spiral :: Figure
+spiral = LineWidth (Pt 2) $
+    pathImage 0.01 (0,4) $
+      \t -> ( a * exp t * cos (b*t)
+            , a * exp t * sin (b*t)
+              )
+  where
+    a = 0.1 ; b = 4
+\end{writehaskell}
+\begin{hatex}
+center $ tikzpicture $ figuretikz spiral
+\end{hatex}
+\end{document}
