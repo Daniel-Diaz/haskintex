@@ -1,5 +1,5 @@
 name:                haskintex
-version:             0.2.0.0
+version:             0.3.0.0
 synopsis:            Haskell Evaluation inside of LaTeX code.
 description:
   The /haskintex/ program is a tool that reads a LaTeX file and evaluates Haskell expressions contained
@@ -29,7 +29,8 @@ executable haskintex
                ,       directory >= 1.2.0.0 && < 1.3
                ,       filepath >= 1.1.0.0 && < 1.4
                ,       process >= 1.1.0.2 && < 1.2
-               ,       HaTeX >= 3.6 && < 3.9
+               ,       HaTeX >= 3.9 && < 3.10
                ,       attoparsec >= 0.10.2.0 && < 0.11
+               ,       hint
   default-language:    Haskell2010
   ghc-options: -Wall

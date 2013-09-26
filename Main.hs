@@ -29,6 +29,8 @@ import Paths_haskintex
 import Data.Version (showVersion)
 -- Lists
 import Data.List (intersperse)
+-- GHC
+import Language.Haskell.Interpreter
 
 -- Syntax
 
@@ -46,6 +48,7 @@ import Data.List (intersperse)
 data Syntax =
     WriteLaTeX   Text
   | WriteHaskell Bool Text -- False for Hidden, True for Visible
+  | InsertHaTeX  Text
   | EvalHaskell  Bool Text -- False for Command, True for Environment
   | Sequence     [Syntax]
     deriving Show -- Show instance for debugging.
@@ -53,7 +56,7 @@ data Syntax =
 -- Parsing
 
 parseSyntax :: Bool -> Parser Syntax
-parseSyntax v = fmap Sequence $ many $ choice [ p_writehaskell v, p_evalhaskell, p_writelatex ]
+parseSyntax v = fmap Sequence $ many $ choice [ p_writehaskell v, p_inserthatex, p_evalhaskell, p_writelatex ]
 
 p_writehaskell :: Bool -> Parser Syntax
 p_writehaskell v = do
@@ -63,6 +66,12 @@ p_writehaskell v = do
               , return v ] -- When no option is given, take the default.
   h <- manyTill anyChar $ string "\\end{writehaskell}"
   return $ WriteHaskell b $ pack h
+
+p_inserthatex :: Parser Syntax
+p_inserthatex = do
+  _ <- string "\\begin{hatex}"
+  h <- manyTill anyChar $ string "\\end{hatex}"
+  return $ InsertHaTeX $ pack h
 
 p_evalhaskell :: Parser Syntax
 p_evalhaskell = choice [ p_evalhaskellenv, p_evalhaskellcomm ]
@@ -105,6 +114,7 @@ p_writelatex = (WriteLaTeX . pack) <$>
   where
     p_other =
       choice [ string "\\begin{writehaskell}" >> return False -- starts p_writehaskell
+             , string "\\begin{hatex}"        >> return False -- starts p_inserthatex
              , string "\\begin{evalhaskell}"  >> return False -- starts p_evalhaskellenv
              , string "\\evalhaskell"         >> return False -- starts p_evalhaskellcomm
              , return True
@@ -130,6 +140,21 @@ evalCode modName mFlag lhsFlag = go
                  | lhsFlag = TeXEnv "code" [] $ raw x
                  | otherwise = verbatim x
          in return $ render $ f t
+    go (InsertHaTeX t) = do
+         let e = unpack $ T.strip t
+             int = do
+               loadModules [modName]
+               setTopLevelModules [modName]
+               setImports ["Prelude"]
+               interpret e (as :: LaTeX)
+         outputStr $ "Evaluation (LaTeX): " ++ e
+         r <- runInterpreter int
+         case r of
+           Left err -> do
+             outputStr $ "Warning: Expression '" ++ e ++ "' thrown the following error:\n"
+               ++ show err ++ "\n"
+             return mempty
+           Right l -> return $ render l
     go (EvalHaskell env t) =
          let f :: Text -> LaTeX
              f x | mFlag = raw x -- Manual flag overrides lhs2tex flag behavior
