@@ -36,10 +36,13 @@ import Language.Haskell.Interpreter
 
 -- | The 'Syntax' datatype describes how haskintex see a LaTeX
 --   file. When haskintex processes an input file, it parsers
---   to this structure. It differentiates three things:
+--   to this structure. It differentiates between these parts:
 --
 -- * writehaskell environments (WriteHaskell), either marked
 --   visible or not.
+--
+-- * Haskell expression of type 'LaTeX' (InsertHaTeX).
+--   See the HaTeX package for details about this type.
 --
 -- * evalhaskell commands and environments (EvalHaskell).
 --
@@ -69,8 +72,8 @@ p_writehaskell v = do
 
 p_inserthatex :: Parser Syntax
 p_inserthatex = do
-  _ <- string "\\begin{hatex}"
-  h <- manyTill anyChar $ string "\\end{hatex}"
+  _ <- string "\\hatex{"
+  h <- p_haskell 0
   return $ InsertHaTeX $ pack h
 
 p_evalhaskell :: Parser Syntax
@@ -114,7 +117,7 @@ p_writelatex = (WriteLaTeX . pack) <$>
   where
     p_other =
       choice [ string "\\begin{writehaskell}" >> return False -- starts p_writehaskell
-             , string "\\begin{hatex}"        >> return False -- starts p_inserthatex
+             , string "\\hatex"               >> return False -- starts p_inserthatex
              , string "\\begin{evalhaskell}"  >> return False -- starts p_evalhaskellenv
              , string "\\evalhaskell"         >> return False -- starts p_evalhaskellcomm
              , return True
@@ -129,7 +132,10 @@ extractCode _ = mempty
 
 -- PASS 2: Evaluate Haskell expressions from processed Syntax.
 
-evalCode :: String -> Bool -> Bool -> Syntax -> Haskintex Text
+evalCode :: String -- ^ Auxiliary module name
+         -> Bool   -- ^ Is manual flag on?
+         -> Bool   -- ^ Is lhs2tex flag on?
+         -> Syntax -> Haskintex Text
 evalCode modName mFlag lhsFlag = go
   where
     go (WriteLaTeX t) = return t
