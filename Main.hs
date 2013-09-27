@@ -253,12 +253,14 @@ main = (readConf <$> getArgs) >>= runReaderT haskintex
 haskintex :: Haskintex ()
 haskintex = do
   flags <- ask
-  if helpFlag flags
+  if -- If the help flag is passed, ignore everything else
+     -- and just print the help.
+     helpFlag flags
      then lift $ putStr help
-     else do let xs = inputs flags
-             if null xs
-                then lift $ putStr noFiles
-                else mapM_ haskintexFile xs
+     else let xs = inputs flags
+          in  if null xs
+                 then lift $ putStr noFiles
+                 else mapM_ haskintexFile xs
 
 commas :: [String] -> String
 commas = concat . intersperse ", "
