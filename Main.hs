@@ -8,6 +8,7 @@ import System.Process (readProcess)
 import System.Environment (getArgs)
 import System.FilePath
 import System.Directory
+import System.IO (hFlush,stdout)
 -- Text
 import Data.Text (pack,unpack)
 import qualified Data.Text as T
@@ -194,30 +195,32 @@ layout = T.unlines . go . T.lines
 -- Configuration
 
 data Conf = Conf
-  { keepFlag     :: Bool
-  , visibleFlag  :: Bool
-  , verboseFlag  :: Bool
-  , manualFlag   :: Bool
-  , helpFlag     :: Bool
-  , lhs2texFlag  :: Bool
-  , stdoutFlag   :: Bool
-  , unknownFlags :: [String]
-  , inputs       :: [FilePath]
+  { keepFlag      :: Bool
+  , visibleFlag   :: Bool
+  , verboseFlag   :: Bool
+  , manualFlag    :: Bool
+  , helpFlag      :: Bool
+  , lhs2texFlag   :: Bool
+  , stdoutFlag    :: Bool
+  , overwriteFlag :: Bool
+  , unknownFlags  :: [String]
+  , inputs        :: [FilePath]
     }
 
 supportedFlags :: [(String,Conf -> Bool)]
 supportedFlags =
-  [ ("keep", keepFlag)
-  , ("visible", visibleFlag)
-  , ("verbose", verboseFlag)
-  , ("manual", manualFlag)
-  , ("help", helpFlag)
-  , ("lhs2tex", lhs2texFlag)
-  , ("stdout", stdoutFlag)
+  [ ("keep"      , keepFlag)
+  , ("visible"   , visibleFlag)
+  , ("verbose"   , verboseFlag)
+  , ("manual"    , manualFlag)
+  , ("help"      , helpFlag)
+  , ("lhs2tex"   , lhs2texFlag)
+  , ("stdout"    , stdoutFlag)
+  , ("overwrite" , overwriteFlag)
     ]
 
 readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False False False [] []
+readConf = go $ Conf False False False False False False False False [] []
   where
     go c [] = c
     go c (x:xs) =
@@ -225,14 +228,15 @@ readConf = go $ Conf False False False False False False False [] []
         -- Arguments starting with '-' are considered a flag.
         ('-':flag) ->
            case flag of
-             "keep"    -> go (c {keepFlag    = True}) xs
-             "visible" -> go (c {visibleFlag = True}) xs
-             "verbose" -> go (c {verboseFlag = True}) xs
-             "manual"  -> go (c {manualFlag  = True}) xs
-             "help"    -> go (c {helpFlag    = True}) xs
-             "lhs2tex" -> go (c {lhs2texFlag = True}) xs
-             "stdout"  -> go (c {stdoutFlag  = True}) xs
-             _         -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
+             "keep"      -> go (c {keepFlag      = True}) xs
+             "visible"   -> go (c {visibleFlag   = True}) xs
+             "verbose"   -> go (c {verboseFlag   = True}) xs
+             "manual"    -> go (c {manualFlag    = True}) xs
+             "help"      -> go (c {helpFlag      = True}) xs
+             "lhs2tex"   -> go (c {lhs2texFlag   = True}) xs
+             "stdout"    -> go (c {stdoutFlag    = True}) xs
+             "overwrite" -> go (c {overwriteFlag = True}) xs
+             _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
         -- Otherwise, an input file.
         _ -> go (c {inputs = inputs c ++ [x]}) xs
 
@@ -282,9 +286,9 @@ reportWarnings = do
 
 haskintexFile :: FilePath -> Haskintex ()
 haskintexFile fp_ = do
-  -- If the given file does not exist, try adding '.tex'.
+  -- If the given file does not exist, try adding '.htex'.
   b <- lift $ doesFileExist fp_
-  let fp = if b then fp_ else fp_ ++ ".tex"
+  let fp = if b then fp_ else fp_ ++ ".htex"
   -- Report enabled flags
   showEnabledFlags
   -- Warnings
@@ -316,9 +320,21 @@ haskintexFile fp_ = do
       if outFlag
          then do outputStr "Sending final output to stdout..."
                  lift $ T.putStr l
-         else do let fp' = "haskintex_" ++ fp
-                 outputStr $ "Writing final file at " ++ fp' ++ "..."
-                 lift $ T.writeFile fp' l
+         else do let fp' = dropExtension (takeFileName fp) ++ ".tex"
+                     writeIt = do outputStr $ "Writing final file at " ++ fp' ++ "..."
+                                  lift $ T.writeFile fp' l
+                 overFlag <- overwriteFlag <$> ask
+                 if overFlag
+                    then writeIt
+                    else do nonew <- lift $ doesFileExist fp' 
+                            if nonew
+                               then do lift $ putStr $ "File " ++ fp' ++ " already exists. Overwrite? (use -overwrite to overwrite by default) "
+                                       lift $ hFlush stdout
+                                       resp <- lift getLine
+                                       if resp `elem` ["","y","yes"]
+                                          then writeIt
+                                          else outputStr "No file was written."
+                               else writeIt
       -- If the keep flag is not set, remove the haskell source file.
       kFlag <- keepFlag <$> ask
       unless kFlag $ do
