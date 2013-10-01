@@ -316,25 +316,24 @@ haskintexFile fp_ = do
       lhsFlag <- lhs2texFlag <$> ask
       l <- evalCode modName mFlag lhsFlag s
       -- Write final output.
+      let fp' = dropExtension (takeFileName fp) ++ ".tex"
+          writeit = do outputStr $ "Writing final file at " ++ fp' ++ "..."
+                       lift $ T.writeFile fp' l
       outFlag <- stdoutFlag <$> ask
-      if outFlag
-         then do outputStr "Sending final output to stdout..."
-                 lift $ T.putStr l
-         else do let fp' = dropExtension (takeFileName fp) ++ ".tex"
-                     writeIt = do outputStr $ "Writing final file at " ++ fp' ++ "..."
-                                  lift $ T.writeFile fp' l
-                 overFlag <- overwriteFlag <$> ask
-                 if overFlag
-                    then writeIt
-                    else do nonew <- lift $ doesFileExist fp' 
-                            if nonew
-                               then do lift $ putStr $ "File " ++ fp' ++ " already exists. Overwrite? (use -overwrite to overwrite by default) "
-                                       lift $ hFlush stdout
-                                       resp <- lift getLine
-                                       if resp `elem` ["","y","yes"]
-                                          then writeIt
-                                          else outputStr "No file was written."
-                               else writeIt
+      overFlag <- overwriteFlag <$> ask
+      nonew <- lift $ doesFileExist fp'
+      finalOutput
+        | outFlag  = do outputStr "Sending final output to stdout..."
+                        lift $ T.putStr l
+        | overFlag = writeIt
+        | nonew = do lift $ putStr $ "File " ++ fp' ++ " already exists. Overwrite?"
+                                 ++" (use -overwrite to overwrite by default) "
+                     lift $ hFlush stdout -- To immediately show the text on Windows systems.
+                     resp <- lift getLine
+                     if resp `elem` ["","y","yes"]
+                        then writeIt
+                        else outputStr "No file was written."
+        | otherwise = writeIt
       -- If the keep flag is not set, remove the haskell source file.
       kFlag <- keepFlag <$> ask
       unless kFlag $ do
@@ -357,32 +356,35 @@ help = unlines [
   , "will be processed with the same set of flags, which will include all the"
   , "flags passed in the call. This is the list of flags supported by haskintex:"
   , ""
-  , "  -keep     haskintex creates an intermmediate Haskell file before"
-  , "            evaluating any expressions. By default, this file is "
-  , "            eliminated after processing the file. Pass this flag to"
-  , "            keep the file."
+  , "  -keep       haskintex creates an intermmediate Haskell file before"
+  , "              evaluating any expressions. By default, this file is "
+  , "              eliminated after processing the file. Pass this flag to"
+  , "              keep the file."
   , ""
-  , "  -visible  By default, code written inside a writehaskell environment"
-  , "            is not shown in the LaTeX output. This flag changes the"
-  , "            default."
+  , "  -visible    By default, code written inside a writehaskell environment"
+  , "              is not shown in the LaTeX output. This flag changes the"
+  , "              default."
   , ""
-  , "  -verbose  If this flag is enabled, haskintex will print information"
-  , "            about its own execution while running."
+  , "  -verbose    If this flag is enabled, haskintex will print information"
+  , "              about its own execution while running."
   , ""
-  , "  -manual   By default, Haskell expressions, either from writehaskell "
-  , "            or evalhaskell, appear in the LaTeX output inside verb or"
-  , "            verbatim declarations. If this flag is passed, neither verb"
-  , "            nor verbatim will be used. The code will be written as text "
-  , "            as it is. The user will decide how to handle it."
+  , "  -manual     By default, Haskell expressions, either from writehaskell "
+  , "              or evalhaskell, appear in the LaTeX output inside verb or"
+  , "              verbatim declarations. If this flag is passed, neither verb"
+  , "              nor verbatim will be used. The code will be written as text "
+  , "              as it is. The user will decide how to handle it."
   , ""
-  , "  -help     This flags cancels any other flag or input file and makes"
-  , "            the program simply show this help message."
+  , "  -help       This flags cancels any other flag or input file and makes"
+  , "              the program simply show this help message."
   , ""
-  , "  -stdout   Instead of writing the output to a file, send it to the"
-  , "            standard output stream (stdout)."
+  , "  -stdout     Instead of writing the output to a file, send it to the"
+  , "              standard output stream (stdout)."
   , ""
-  , "  -lhs2tex  Instead of using verb or verbatim declarations, format the"
-  , "            output using the syntax accepted by lhs2TeX."
+  , "  -lhs2tex    Instead of using verb or verbatim declarations, format the"
+  , "              output using the syntax accepted by lhs2TeX."
+  , ""
+  , "  -overwrite  Overwrite the output file if it already exists. If this flag"
+  , "              is not set, the program will ask before overwriting."
   , ""
   , "Any unsupported flag will be ignored."
   ]
