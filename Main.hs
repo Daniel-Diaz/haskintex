@@ -196,7 +196,7 @@ layout = T.unlines . go . T.lines
 
 errorString :: InterpreterError -> String
 errorString (UnknownError e) = "Unknown error: " ++ e
-errorString (WontCompile es) = "Compiling error:\n" ++ init (unlines $ fmap errMsg es)
+errorString (WontCompile es) = "Compiler error:\n" ++ init (unlines $ fmap errMsg es)
 errorString (NotAllowed e) = "Not allowed:" ++ e
 errorString (GhcException e) = "GHC exception: " ++ e
 
