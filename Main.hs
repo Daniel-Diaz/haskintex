@@ -322,18 +322,19 @@ haskintexFile fp_ = do
       outFlag <- stdoutFlag <$> ask
       overFlag <- overwriteFlag <$> ask
       nonew <- lift $ doesFileExist fp'
+      let finalOutput
+           | outFlag = do outputStr "Sending final output to stdout..."
+                          lift $ T.putStr l
+           | overFlag = writeit
+           | nonew = do lift $ putStr $ "File " ++ fp' ++ " already exists. Overwrite?"
+                                     ++ " (use -overwrite to overwrite by default) "
+                        lift $ hFlush stdout -- To immediately show the text on Windows systems.
+                        resp <- lift getLine
+                        if resp `elem` ["","y","yes"]
+                           then writeit
+                           else outputStr "No file was written."
+           | otherwise = writeit
       finalOutput
-        | outFlag  = do outputStr "Sending final output to stdout..."
-                        lift $ T.putStr l
-        | overFlag = writeIt
-        | nonew = do lift $ putStr $ "File " ++ fp' ++ " already exists. Overwrite?"
-                                 ++" (use -overwrite to overwrite by default) "
-                     lift $ hFlush stdout -- To immediately show the text on Windows systems.
-                     resp <- lift getLine
-                     if resp `elem` ["","y","yes"]
-                        then writeIt
-                        else outputStr "No file was written."
-        | otherwise = writeIt
       -- If the keep flag is not set, remove the haskell source file.
       kFlag <- keepFlag <$> ask
       unless kFlag $ do
