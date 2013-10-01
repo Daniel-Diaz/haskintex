@@ -158,8 +158,8 @@ evalCode modName mFlag lhsFlag = go
          r <- runInterpreter int
          case r of
            Left err -> do
-             outputStr $ "Warning: Expression '" ++ e ++ "' thrown the following error:\n"
-               ++ show err ++ "\n"
+             outputStr $ "Warning: Error while evaluating the expression.\n"
+               ++ errorString err
              return mempty
            Right l -> return $ render l
     go (EvalHaskell env t) =
@@ -191,6 +191,14 @@ layout = T.unlines . go . T.lines
          then let (l,r) = T.splitAt maxLineLength t
               in  l : go (r:ts)
          else t : go ts
+
+-- Errors
+
+errorString :: InterpreterError -> String
+errorString (UnknownError e) = "Unknown error: " ++ e
+errorString (WontCompile es) = "Compiling error:\n" ++ init (unlines $ fmap errMsg es)
+errorString (NotAllowed e) = "Not allowed:" ++ e
+errorString (GhcException e) = "GHC exception: " ++ e
 
 -- Configuration
 
