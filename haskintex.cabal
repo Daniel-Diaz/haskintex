@@ -17,7 +17,9 @@ category:            LaTeX
 build-type:          Simple
 extra-source-files:  README.md
                      -- examples
-                     examples/fact.tex
+                     examples/fact.htex
+                     examples/hatex.htex
+                     examples/sine.htex
 cabal-version:       >=1.10
 
 executable haskintex

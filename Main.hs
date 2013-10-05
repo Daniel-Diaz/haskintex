@@ -102,6 +102,8 @@ p_haskell n = choice [
           else ('}':) <$> p_haskell (n-1)
   , do _ <- char '\"'
        liftA2 (++) (('\"':) <$> p_string) (p_haskell n)
+  , string "'{'" >> return "'{'"
+  , string "'}'" >> return "'}'"
   , liftA2 (:) anyChar (p_haskell n)
     ]
 
@@ -110,7 +112,7 @@ p_string = choice [
     liftA2 (++) (char '\\' >> char '\"' >> return "\\\"") p_string
   , liftA2 (:) (char '\"') (return [])
   , liftA2 (:) anyChar p_string
-    ]  
+    ]
 
 p_writelatex :: Parser Syntax
 p_writelatex = (WriteLaTeX . pack) <$>

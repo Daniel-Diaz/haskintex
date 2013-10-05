@@ -1,0 +1,22 @@
+\documentclass{article}
+\author{Mr. Trigonometric}
+\title{The sine function}
+\usepackage{tikz}
+\begin{document}
+\maketitle
+\begin{writehaskell}
+import Text.LaTeX
+import Text.LaTeX.Packages.TikZ.Simple
+
+graphLength :: Double
+graphLength = 3*pi
+
+sineGraph :: Figure
+sineGraph = Figures [
+    Colored (BasicColor Red) $ Line [ (-1,0) , (graphLength,0) ]
+  , Colored (BasicColor Red) $ Line [ (0,-1) , (0,1) ]
+  , LineWidth (Pt 2) $ pathImage 0.01 (0,graphLength) $ \x -> (x,sin x)
+    ]
+\end{writehaskell}
+\hatex{tikzpicture $ figuretikz sineGraph}
+\end{document}
