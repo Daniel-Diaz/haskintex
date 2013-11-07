@@ -13,7 +13,9 @@ import Data.Text (pack,unpack)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 -- Parser
-import Data.Attoparsec.Text
+-- import Data.Attoparsec.Text
+import Text.Parsec hiding (many)
+import Text.Parsec.Text
 -- Transformers
 import Control.Monad (when,unless)
 import Control.Monad.Trans.Class
@@ -56,18 +58,21 @@ data Syntax =
   | Sequence     [Syntax]
     deriving Show -- Show instance for debugging.
 
--- Parsing
+-- PARSING
 
 parseSyntax :: Bool -> Parser Syntax
-parseSyntax v = fmap Sequence $ many $ choice [ p_writehaskell v, p_inserthatex, p_evalhaskell, p_writelatex ]
+parseSyntax v = do
+  s <- fmap Sequence $ many $ choice $ fmap try [ p_writehaskell v, p_inserthatex, p_evalhaskell, p_writelatex ]
+  eof
+  return s
 
 p_writehaskell :: Bool -> Parser Syntax
 p_writehaskell v = do
   _ <- string "\\begin{writehaskell}"
-  b <- choice [ string "[hidden]"  >> return False
-              , string "[visible]" >> return True
-              , return v ] -- When no option is given, take the default.
-  h <- manyTill anyChar $ string "\\end{writehaskell}"
+  b <- choice $ fmap try [ string "[hidden]"  >> return False
+                         , string "[visible]" >> return True
+                         , return v ] -- When no option is given, take the default.
+  h <- manyTill anyChar $ try $ string "\\end{writehaskell}"
   return $ WriteHaskell b $ pack h
 
 p_inserthatex :: Parser Syntax
@@ -77,12 +82,12 @@ p_inserthatex = do
   return $ InsertHaTeX $ pack h
 
 p_evalhaskell :: Parser Syntax
-p_evalhaskell = choice [ p_evalhaskellenv, p_evalhaskellcomm ]
+p_evalhaskell = choice $ fmap try [ p_evalhaskellenv, p_evalhaskellcomm ]
 
 p_evalhaskellenv :: Parser Syntax
 p_evalhaskellenv = do
   _ <- string "\\begin{evalhaskell}"
-  h <- manyTill anyChar $ string "\\end{evalhaskell}"
+  h <- manyTill anyChar $ try $ string "\\end{evalhaskell}"
   return $ EvalHaskell True $ pack h
 
 p_evalhaskellcomm :: Parser Syntax
@@ -101,14 +106,14 @@ p_haskell n = choice [
           else ('}':) <$> p_haskell (n-1)
   , do _ <- char '\"'
        liftA2 (++) (('\"':) <$> p_string) (p_haskell n)
-  , string "'{'" >> return "'{'"
-  , string "'}'" >> return "'}'"
+  , try (string "'{'") >> return "'{'"
+  , try (string "'}'") >> return "'}'"
   , liftA2 (:) anyChar (p_haskell n)
     ]
 
 p_string :: Parser String
 p_string = choice [
-    liftA2 (++) (char '\\' >> char '\"' >> return "\\\"") p_string
+    try $ liftA2 (++) (char '\\' >> char '\"' >> return "\\\"") p_string
   , liftA2 (:) (char '\"') (return [])
   , liftA2 (:) anyChar p_string
     ]
@@ -118,7 +123,8 @@ p_writelatex = (WriteLaTeX . pack) <$>
   many1 (p_other >>= \b -> if b then anyChar else fail "stop write latex")
   where
     p_other =
-      choice [ string "\\begin{writehaskell}" >> return False -- starts p_writehaskell
+      choice $ fmap (try . lookAhead)
+             [ string "\\begin{writehaskell}" >> return False -- starts p_writehaskell
              , string "\\hatex"               >> return False -- starts p_inserthatex
              , string "\\begin{evalhaskell}"  >> return False -- starts p_evalhaskellenv
              , string "\\evalhaskell"         >> return False -- starts p_evalhaskellcomm
@@ -308,8 +314,10 @@ haskintexFile fp_ = do
   outputStr $ "Reading " ++ fp ++ "..."
   vFlag <- visibleFlag <$> ask
   t <- lift $ T.readFile fp
-  case parseOnly (parseSyntax vFlag) t of
-    Left err -> outputStr $ "Reading of " ++ fp ++ " failed: " ++ err
+  -- case parseOnly (parseSyntax vFlag) t of
+    -- Left err -> outputStr $ "Reading of " ++ fp ++ " failed: " ++ err
+  case parse (parseSyntax vFlag) fp t of
+    Left err -> outputStr $ "Reading of " ++ fp ++ " failed:\n" ++ show err
     Right s -> do
       -- First pass: Create haskell source from the code obtained with 'extractCode'.
       let modName = ("Haskintex_" ++) $ dropExtension $ takeFileName fp

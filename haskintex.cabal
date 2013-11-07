@@ -40,7 +40,7 @@ library
                , filepath >= 1.1.0.0 && < 1.4
                , process >= 1.1.0.2 && < 1.2
                , HaTeX >= 3.9 && < 3.10
-               , attoparsec >= 0.10.2.0 && < 0.11
+               , parsec
                , hint
   exposed-modules: Haskintex
   other-modules: Paths_haskintex
