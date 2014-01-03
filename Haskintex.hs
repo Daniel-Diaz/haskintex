@@ -183,7 +183,13 @@ ghc :: String -> Text -> Haskintex String
 ghc modName e = do
   let e' = unpack $ T.strip e
   outputStr $ "Evaluation: " ++ e'
-  lift $ init <$> readProcess "ghc" [ "-e", e', modName ++ ".hs" ] []
+  lift $ init <$> readProcess "ghc" 
+     -- Disable reading of .ghci files.
+     [ "-ignore-dot-ghci"
+     -- Evaluation loading the temporal module.
+     -- The expression is stripped.
+     , "-e", e', modName ++ ".hs"
+       ] []
 
 maxLineLength :: Int
 maxLineLength = 60
