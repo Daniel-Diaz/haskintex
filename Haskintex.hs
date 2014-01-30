@@ -270,6 +270,12 @@ outputStr str = do
   b <- verboseFlag <$> ask
   when b $ lift $ putStrLn str
 
+-- | Run haskintex with the given arguments. For example:
+--
+-- > haskintex ["-visible","-overwrite"]
+--
+--   Useful if you want to call /haskintex/ from another program.
+--   This function does /not/ do any system call.
 haskintex :: [String] -> IO ()
 haskintex = runReaderT haskintexmain . readConf
 
