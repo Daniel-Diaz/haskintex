@@ -1,0 +1,13 @@
+\documentclass{article}
+\begin{document}
+\begin{haskellpragmas}
+{-# LANGUAGE OverloadedStrings #-}
+\end{haskellpragmas}
+\begin{writehaskell}
+import Text.LaTeX
+
+overloaded :: LaTeX
+overloaded = "This is an Overloaded String."
+\end{writehaskell}
+\hatex{overloaded}
+\end{document}

@@ -14,7 +14,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 -- Parser
 -- import Data.Attoparsec.Text
-import Text.Parsec hiding (many)
+import Text.Parsec hiding (many,(<|>))
 import Text.Parsec.Text
 -- Transformers
 import Control.Monad (when,unless)
@@ -41,10 +41,14 @@ import Language.Haskell.Interpreter
 --   to this structure. It differentiates between these parts:
 --
 -- * writehaskell environments (WriteHaskell), either marked
---   visible or not.
+--   visible or not, located either in the header (for pragmas)
+--   or in the body (for regular code).
 --
 -- * Haskell expression of type 'LaTeX' (InsertHaTeX).
 --   See the HaTeX package for details about this type.
+--
+-- * Haskell expression of tyep 'IO LaTeX' (InsertHaTeXIO).
+--   Exactly like InsertHaTeX, but within the IO monad.
 --
 -- * evalhaskell commands and environments (EvalHaskell).
 --
@@ -52,7 +56,8 @@ import Language.Haskell.Interpreter
 --
 data Syntax =
     WriteLaTeX   Text
-  | WriteHaskell Bool Text -- False for Hidden, True for Visible
+  | WriteHaskell Bool Bool Text -- First Bool: False for Hidden, True for Visible.
+                                -- Second Bool: True for Header, False for Body.
   | InsertHaTeX  Text
   | InsertHaTeXIO Text
   | EvalHaskell  Bool Text -- False for Command, True for Environment
@@ -69,12 +74,13 @@ parseSyntax v = do
 
 p_writehaskell :: Bool -> Parser Syntax
 p_writehaskell v = do
-  _ <- string "\\begin{writehaskell}"
+  isH <- (try $ string "\\begin{writehaskell}" >> return False)
+           <|> (string "\\begin{haskellpragmas}" >> return True)
   b <- choice $ fmap try [ string "[hidden]"  >> return False
                          , string "[visible]" >> return True
                          , return v ] -- When no option is given, take the default.
-  h <- manyTill anyChar $ try $ string "\\end{writehaskell}"
-  return $ WriteHaskell b $ pack h
+  h <- manyTill anyChar $ try $ string $ if isH then "\\end{haskellpragmas}" else "\\end{writehaskell}"
+  return $ WriteHaskell b isH $ pack h
 
 p_inserthatex :: Parser Syntax
 p_inserthatex = do
@@ -131,18 +137,19 @@ p_writelatex = (WriteLaTeX . pack) <$>
   where
     p_other =
       choice $ fmap (try . lookAhead)
-             [ string "\\begin{writehaskell}" >> return False -- starts p_writehaskell
-             , string "\\hatex"               >> return False -- starts p_inserthatex
-             , string "\\iohatex"             >> return False -- starts p_inserthatexio
-             , string "\\begin{evalhaskell}"  >> return False -- starts p_evalhaskellenv
-             , string "\\evalhaskell"         >> return False -- starts p_evalhaskellcomm
+             [ string "\\begin{writehaskell}"   >> return False -- starts p_writehaskell (for body)
+             , string "\\begin{haskellpragmas}" >> return False -- starts p_writehaskell (for header)
+             , string "\\hatex"                 >> return False -- starts p_inserthatex
+             , string "\\iohatex"               >> return False -- starts p_inserthatexio
+             , string "\\begin{evalhaskell}"    >> return False -- starts p_evalhaskellenv
+             , string "\\evalhaskell"           >> return False -- starts p_evalhaskellcomm
              , return True
              ]
 
 -- PASS 1: Extract code from processed Syntax.
 
-extractCode :: Syntax -> Text
-extractCode (WriteHaskell _ t) = t
+extractCode :: Syntax -> (Text,Text)
+extractCode (WriteHaskell _ isH t) = if isH then (t,mempty) else (mempty,t)
 extractCode (Sequence xs) = foldMap extractCode xs
 extractCode _ = mempty
 
@@ -155,7 +162,7 @@ evalCode :: String -- ^ Auxiliary module name
 evalCode modName mFlag lhsFlag = go
   where
     go (WriteLaTeX t) = return t
-    go (WriteHaskell b t) =
+    go (WriteHaskell b _ t) =
          let f :: Text -> LaTeX
              f x | not b = mempty
                  | mFlag = raw x
@@ -357,9 +364,9 @@ haskintexFile fp_ = do
       -- First pass: Create haskell source from the code obtained with 'extractCode'.
       let modName = ("Haskintex_" ++) $ dropExtension $ takeFileName fp
       outputStr $ "Creating Haskell source file " ++ modName ++ ".hs..."
-      let hs = extractCode s
-          moduleHeader = pack $ "module " ++ modName ++ " where\n\n"
-      lift $ T.writeFile (modName ++ ".hs") $ moduleHeader <> hs
+      let (hsH,hs) = extractCode s
+          moduleHeader = pack $ "\nmodule " ++ modName ++ " where\n\n"
+      lift $ T.writeFile (modName ++ ".hs") $ hsH <> moduleHeader <> hs
       -- Second pass: Evaluate expressions using 'evalCode'.
       outputStr $ "Evaluating expressions in " ++ fp ++ "..."
       mFlag <- manualFlag <$> ask
