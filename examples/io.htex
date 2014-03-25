@@ -1,0 +1,10 @@
+\documentclass{article}
+\begin{document}
+\begin{writehaskell}
+import Text.LaTeX
+import Data.Time (getCurrentTime)
+import Control.Applicative ((<$>))
+import Data.String (fromString)
+\end{writehaskell}
+I am testing the \texttt{iohatex} command when the time is \iohatex{fromString . show <$> getCurrentTime}.
+\end{document}

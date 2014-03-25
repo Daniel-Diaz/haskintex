@@ -54,6 +54,7 @@ data Syntax =
     WriteLaTeX   Text
   | WriteHaskell Bool Text -- False for Hidden, True for Visible
   | InsertHaTeX  Text
+  | InsertHaTeXIO Text
   | EvalHaskell  Bool Text -- False for Command, True for Environment
   | Sequence     [Syntax]
     deriving Show -- Show instance for debugging.
@@ -62,7 +63,7 @@ data Syntax =
 
 parseSyntax :: Bool -> Parser Syntax
 parseSyntax v = do
-  s <- fmap Sequence $ many $ choice $ fmap try [ p_writehaskell v, p_inserthatex, p_evalhaskell, p_writelatex ]
+  s <- fmap Sequence $ many $ choice $ fmap try [ p_writehaskell v, p_inserthatex, p_inserthatexio , p_evalhaskell, p_writelatex ]
   eof
   return s
 
@@ -80,6 +81,12 @@ p_inserthatex = do
   _ <- string "\\hatex{"
   h <- p_haskell 0
   return $ InsertHaTeX $ pack h
+
+p_inserthatexio :: Parser Syntax
+p_inserthatexio = do
+  _ <- string "\\iohatex{"
+  h <- p_haskell 0
+  return $ InsertHaTeXIO $ pack h
 
 p_evalhaskell :: Parser Syntax
 p_evalhaskell = choice $ fmap try [ p_evalhaskellenv, p_evalhaskellcomm ]
@@ -126,6 +133,7 @@ p_writelatex = (WriteLaTeX . pack) <$>
       choice $ fmap (try . lookAhead)
              [ string "\\begin{writehaskell}" >> return False -- starts p_writehaskell
              , string "\\hatex"               >> return False -- starts p_inserthatex
+             , string "\\iohatex"             >> return False -- starts p_inserthatexio
              , string "\\begin{evalhaskell}"  >> return False -- starts p_evalhaskellenv
              , string "\\evalhaskell"         >> return False -- starts p_evalhaskellcomm
              , return True
@@ -169,6 +177,21 @@ evalCode modName mFlag lhsFlag = go
                ++ errorString err
              return mempty
            Right l -> return $ render l
+    go (InsertHaTeXIO t) = do
+         let e = unpack $ T.strip t
+             int = do
+               loadModules [modName]
+               setTopLevelModules [modName]
+               setImports ["Prelude"]
+               interpret e (as :: IO LaTeX)
+         outputStr $ "Evaluation (IO LaTeX): " ++ e
+         r <- runInterpreter int
+         case r of
+           Left err -> do
+             outputStr $ "Warning: Error while evaluating the expression.\n"
+               ++ errorString err
+             return mempty
+           Right l -> liftIO $ render <$> l
     go (EvalHaskell env t) =
          let f :: Text -> LaTeX
              f x | mFlag = raw x -- Manual flag overrides lhs2tex flag behavior
