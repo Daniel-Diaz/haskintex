@@ -254,6 +254,7 @@ data Conf = Conf
   , lhs2texFlag   :: Bool
   , stdoutFlag    :: Bool
   , overwriteFlag :: Bool
+  , debugFlag     :: Bool
   , unknownFlags  :: [String]
   , inputs        :: [FilePath]
     }
@@ -268,10 +269,11 @@ supportedFlags =
   , ("lhs2tex"   , lhs2texFlag)
   , ("stdout"    , stdoutFlag)
   , ("overwrite" , overwriteFlag)
+  , ("debug"     , debugFlag)
     ]
 
 readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False False False False [] []
+readConf = go $ Conf False False False False False False False False False [] []
   where
     go c [] = c
     go c (x:xs) =
@@ -287,6 +289,7 @@ readConf = go $ Conf False False False False False False False False [] []
              "lhs2tex"   -> go (c {lhs2texFlag   = True}) xs
              "stdout"    -> go (c {stdoutFlag    = True}) xs
              "overwrite" -> go (c {overwriteFlag = True}) xs
+             "debug"     -> go (c {debugFlag     = True}) xs
              _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
         -- Otherwise, an input file.
         _ -> go (c {inputs = inputs c ++ [x]}) xs
@@ -361,6 +364,12 @@ haskintexFile fp_ = do
   case parse (parseSyntax vFlag) fp t of
     Left err -> outputStr $ "Reading of " ++ fp ++ " failed:\n" ++ show err
     Right s -> do
+      -- Zero pass: In case of debugging, write down the parsed AST.
+      dbugFlag <- debugFlag <$> ask
+      when dbugFlag $ do
+        let debugfp = dropExtension (takeFileName fp) ++ ".debughtex"
+        outputStr $ "Writing file " ++ debugfp ++ " with debugging output..."
+        lift $ writeFile debugfp $ show s
       -- First pass: Create haskell source from the code obtained with 'extractCode'.
       let modName = ("Haskintex_" ++) $ dropExtension $ takeFileName fp
       outputStr $ "Creating Haskell source file " ++ modName ++ ".hs..."
@@ -443,6 +452,10 @@ help = unlines [
   , ""
   , "  -overwrite  Overwrite the output file if it already exists. If this flag"
   , "              is not set, the program will ask before overwriting."
+  , ""
+  , "  -debug      Only for debugging purposes. It writes a file with extension"
+  , "              .debughtex with the AST of the internal representation of the"
+  , "              input file haskintex uses."
   , ""
   , "Any unsupported flag will be ignored."
   ]
