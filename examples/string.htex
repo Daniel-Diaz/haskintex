@@ -1,0 +1,4 @@
+\documentclass{article}
+\begin{document}
+The string ``hello{{'' contains \evalhaskell{length ("hello{{" :: String)} characters.
+\end{document}

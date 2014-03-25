@@ -21,6 +21,9 @@ extra-source-files:  README.md
                      examples/fact.htex
                      examples/hatex.htex
                      examples/sine.htex
+                     examples/io.htex
+                     examples/pragmas.htex
+                     examples/string.htex
 cabal-version:       >=1.10
 
 executable haskintex
