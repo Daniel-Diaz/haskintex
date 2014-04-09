@@ -1,0 +1,18 @@
+\documentclass{article}
+\begin{document}
+\begin{writehaskell}
+
+import Text.LaTeX
+
+import Control.Concurrent
+import Control.Concurrent.MVar
+
+test :: IO String
+test = do
+  v <- newEmptyMVar
+  forkOS $ putMVar v "concurrent"
+  takeMVar v
+
+\end{writehaskell}
+I like to write \iohatex{fmap fromString test} programs.
+\end{document}

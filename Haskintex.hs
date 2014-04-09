@@ -33,6 +33,7 @@ import Data.Version (showVersion)
 import Data.List (intersperse)
 -- GHC
 import Language.Haskell.Interpreter
+import Language.Haskell.Interpreter.Unsafe
 
 -- Syntax
 
