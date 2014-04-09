@@ -305,7 +305,7 @@ outputStr str = do
 
 -- | Run haskintex with the given arguments. For example:
 --
--- > haskintex ["-visible","-overwrite"]
+-- > haskintex ["-visible","-overwrite","foo.htex"]
 --
 --   Useful if you want to call /haskintex/ from another program.
 --   This function does /not/ do any system call.
