@@ -169,7 +169,7 @@ p_inserthatex isIO = do
   --
   _ <- try $ string $ '\\' : iden
   b <- readMemo
-  char '{'
+  _ <- char '{'
   h <- p_haskell 0
   return $ cons b $ processExp $ pack h
 
@@ -187,7 +187,7 @@ p_evalhaskellcomm :: Parser Syntax
 p_evalhaskellcomm = do
   _  <- try $ string "\\evalhaskell"
   b <- readMemo
-  char '{'
+  _ <- char '{'
   h  <- p_haskell 0
   return $ EvalHaskell False b $ processExp $ pack h
 
@@ -381,7 +381,6 @@ haskintexFile fp_ = do
     outputStr $ "Unsupported flags: " ++ commas uFlags ++ "."
   -- File parsing.
   outputStr $ "Reading " ++ fp ++ "..."
-  vFlag <- visibleFlag <$> get
   t <- lift $ T.readFile fp
   pres <- runParserT parseSyntax () fp t
   case pres of
