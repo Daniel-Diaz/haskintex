@@ -333,7 +333,7 @@ errorString (GhcException e) = "GHC exception: " ++ e
 -- > haskintex ["-visible","-overwrite","foo.htex"]
 --
 --   Useful if you want to call /haskintex/ from another program.
---   This function does /not/ do any system call.
+--
 haskintex :: [String] -> IO ()
 haskintex = evalStateT haskintexmain . readConf
 
