@@ -301,7 +301,6 @@ ghc modName e = do
      -- Disable reading of .ghci files.
      [ "-ignore-dot-ghci"
      -- Evaluation loading the temporal module.
-     -- The expression is stripped.
      , "-e", e', modName ++ ".hs"
        ] []
 
