@@ -68,6 +68,69 @@ data Syntax =
   | Sequence     [Syntax]
     deriving Show -- Show instance for debugging.
 
+-- Configuration
+
+data Conf = Conf
+  { keepFlag      :: Bool
+  , visibleFlag   :: Bool
+  , verboseFlag   :: Bool
+  , manualFlag    :: Bool
+  , helpFlag      :: Bool
+  , lhs2texFlag   :: Bool
+  , stdoutFlag    :: Bool
+  , overwriteFlag :: Bool
+  , debugFlag     :: Bool
+  , memoFlag      :: Bool
+  , unknownFlags  :: [String]
+  , inputs        :: [FilePath]
+    }
+
+supportedFlags :: [(String,Conf -> Bool)]
+supportedFlags =
+  [ ("keep"      , keepFlag)
+  , ("visible"   , visibleFlag)
+  , ("verbose"   , verboseFlag)
+  , ("manual"    , manualFlag)
+  , ("help"      , helpFlag)
+  , ("lhs2tex"   , lhs2texFlag)
+  , ("stdout"    , stdoutFlag)
+  , ("overwrite" , overwriteFlag)
+  , ("debug"     , debugFlag)
+  , ("memo"      , memoFlag)
+    ]
+
+readConf :: [String] -> Conf
+readConf = go $ Conf False False False False False False False False False False [] []
+  where
+    go c [] = c
+    go c (x:xs) =
+       case x of
+        -- Arguments starting with '-' are considered a flag.
+        ('-':flag) ->
+           case flag of
+             "keep"      -> go (c {keepFlag      = True}) xs
+             "visible"   -> go (c {visibleFlag   = True}) xs
+             "verbose"   -> go (c {verboseFlag   = True}) xs
+             "manual"    -> go (c {manualFlag    = True}) xs
+             "help"      -> go (c {helpFlag      = True}) xs
+             "lhs2tex"   -> go (c {lhs2texFlag   = True}) xs
+             "stdout"    -> go (c {stdoutFlag    = True}) xs
+             "overwrite" -> go (c {overwriteFlag = True}) xs
+             "debug"     -> go (c {debugFlag     = True}) xs
+             "memo"      -> go (c {memoFlag      = True}) xs
+             _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
+        -- Otherwise, an input file.
+        _ -> go (c {inputs = inputs c ++ [x]}) xs
+
+-- Haskintex monad
+
+type Haskintex = ReaderT Conf IO
+
+outputStr :: String -> Haskintex ()
+outputStr str = do
+  b <- verboseFlag <$> ask
+  when b $ lift $ putStrLn str
+
 -- PARSING
 
 type Parser = ParsecT Text () Haskintex
@@ -259,68 +322,7 @@ errorString (WontCompile es) = "Compiler error:\n" ++ init (unlines $ fmap errMs
 errorString (NotAllowed e) = "Not allowed:" ++ e
 errorString (GhcException e) = "GHC exception: " ++ e
 
--- Configuration
-
-data Conf = Conf
-  { keepFlag      :: Bool
-  , visibleFlag   :: Bool
-  , verboseFlag   :: Bool
-  , manualFlag    :: Bool
-  , helpFlag      :: Bool
-  , lhs2texFlag   :: Bool
-  , stdoutFlag    :: Bool
-  , overwriteFlag :: Bool
-  , debugFlag     :: Bool
-  , memoFlag      :: Bool
-  , unknownFlags  :: [String]
-  , inputs        :: [FilePath]
-    }
-
-supportedFlags :: [(String,Conf -> Bool)]
-supportedFlags =
-  [ ("keep"      , keepFlag)
-  , ("visible"   , visibleFlag)
-  , ("verbose"   , verboseFlag)
-  , ("manual"    , manualFlag)
-  , ("help"      , helpFlag)
-  , ("lhs2tex"   , lhs2texFlag)
-  , ("stdout"    , stdoutFlag)
-  , ("overwrite" , overwriteFlag)
-  , ("debug"     , debugFlag)
-  , ("memo"      , memoFlag)
-    ]
-
-readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False False False False False False [] []
-  where
-    go c [] = c
-    go c (x:xs) =
-       case x of
-        -- Arguments starting with '-' are considered a flag.
-        ('-':flag) ->
-           case flag of
-             "keep"      -> go (c {keepFlag      = True}) xs
-             "visible"   -> go (c {visibleFlag   = True}) xs
-             "verbose"   -> go (c {verboseFlag   = True}) xs
-             "manual"    -> go (c {manualFlag    = True}) xs
-             "help"      -> go (c {helpFlag      = True}) xs
-             "lhs2tex"   -> go (c {lhs2texFlag   = True}) xs
-             "stdout"    -> go (c {stdoutFlag    = True}) xs
-             "overwrite" -> go (c {overwriteFlag = True}) xs
-             "debug"     -> go (c {debugFlag     = True}) xs
-             "memo"      -> go (c {memoFlag      = True}) xs
-             _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
-        -- Otherwise, an input file.
-        _ -> go (c {inputs = inputs c ++ [x]}) xs
-
--- Haskintex
-
-type Haskintex = ReaderT Conf IO
-
-outputStr :: String -> Haskintex ()
-outputStr str = do
-  b <- verboseFlag <$> ask
-  when b $ lift $ putStrLn str
+-- Haskintex main function
 
 -- | Run haskintex with the given arguments. For example:
 --
