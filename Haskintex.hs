@@ -168,7 +168,7 @@ p_inserthatex isIO = do
   b <- readMemo
   char '{'
   h <- p_haskell 0
-  return $ cons b $ pack h
+  return $ cons b $ T.strip $ pack h
 
 p_evalhaskell :: Parser Syntax
 p_evalhaskell = choice [ p_evalhaskellenv, p_evalhaskellcomm ]
@@ -178,7 +178,7 @@ p_evalhaskellenv = do
   _ <- try $ string "\\begin{evalhaskell}"
   b <- readMemo
   h <- manyTill anyChar $ try $ string "\\end{evalhaskell}"
-  return $ EvalHaskell True b $ pack h
+  return $ EvalHaskell True b $ T.strip $ pack h
 
 p_evalhaskellcomm :: Parser Syntax
 p_evalhaskellcomm = do
@@ -186,7 +186,7 @@ p_evalhaskellcomm = do
   b <- readMemo
   char '{'
   h  <- p_haskell 0
-  return $ EvalHaskell False b $ pack h
+  return $ EvalHaskell False b $ T.strip $ pack h
 
 p_haskell :: Int -> Parser String
 p_haskell n = choice [
@@ -249,7 +249,7 @@ evalCode modName mFlag lhsFlag = go
                  | otherwise = verbatim x
          in return $ render $ f t
     go (InsertHaTeX isMemo t) = do
-         let e = unpack $ T.strip t
+         let e = unpack t
              int = do
                loadModules [modName]
                setTopLevelModules [modName]
@@ -264,7 +264,7 @@ evalCode modName mFlag lhsFlag = go
              return mempty
            Right l -> return $ render l
     go (InsertHaTeXIO isMemo t) = do
-         let e = unpack $ T.strip t
+         let e = unpack t
              int = do
                loadModules [modName]
                setTopLevelModules [modName]
@@ -290,7 +290,7 @@ evalCode modName mFlag lhsFlag = go
 
 ghc :: String -> Text -> Haskintex String
 ghc modName e = do
-  let e' = unpack $ T.strip e
+  let e' = unpack e
   outputStr $ "Evaluation: " ++ e'
   lift $ init <$> readProcess "ghc" 
      -- Disable reading of .ghci files.
