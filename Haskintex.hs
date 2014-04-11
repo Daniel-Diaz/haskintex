@@ -67,19 +67,19 @@ data Syntax =
 
 type Parser = ParsecT Text () Haskintex
 
-parseSyntax :: Bool -> Parser Syntax
-parseSyntax v = do
-  s <- fmap Sequence $ many $ choice $ fmap try [ p_writehaskell v, p_inserthatex, p_inserthatexio , p_evalhaskell, p_writelatex ]
+parseSyntax :: Parser Syntax
+parseSyntax = do
+  s <- fmap Sequence $ many $ choice $ fmap try [ p_writehaskell, p_inserthatex, p_inserthatexio , p_evalhaskell, p_writelatex ]
   eof
   return s
 
-p_writehaskell :: Bool -> Parser Syntax
-p_writehaskell v = do
+p_writehaskell :: Parser Syntax
+p_writehaskell = do
   isH <- (try $ string "\\begin{writehaskell}" >> return False)
            <|> (string "\\begin{haskellpragmas}" >> return True)
   b <- choice $ fmap try [ string "[hidden]"  >> return False
                          , string "[visible]" >> return True
-                         , return v ] -- When no option is given, take the default.
+                         , lift $ visibleFlag <$> ask ] -- When no option is given, take the default.
   h <- manyTill anyChar $ try $ string $ if isH then "\\end{haskellpragmas}" else "\\end{writehaskell}"
   return $ WriteHaskell b isH $ pack h
 
@@ -360,7 +360,7 @@ haskintexFile fp_ = do
   outputStr $ "Reading " ++ fp ++ "..."
   vFlag <- visibleFlag <$> ask
   t <- lift $ T.readFile fp
-  pres <- runParserT (parseSyntax vFlag) () fp t
+  pres <- runParserT parseSyntax () fp t
   case pres of
     Left err -> outputStr $ "Reading of " ++ fp ++ " failed:\n" ++ show err
     Right s -> do
