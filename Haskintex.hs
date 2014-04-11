@@ -18,7 +18,7 @@ import Text.Parsec.Text ()
 -- Transformers
 import Control.Monad (when,unless)
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.Reader
+import Control.Monad.Trans.State
 -- LaTeX
 import Text.LaTeX hiding (version)
 import Text.LaTeX.Base.Syntax
@@ -31,7 +31,7 @@ import Data.Version (showVersion)
 -- Lists
 import Data.List (intersperse)
 -- GHC
-import Language.Haskell.Interpreter
+import Language.Haskell.Interpreter hiding (get)
 
 -- Syntax
 
@@ -124,11 +124,11 @@ readConf = go $ Conf False False False False False False False False False False
 
 -- Haskintex monad
 
-type Haskintex = ReaderT Conf IO
+type Haskintex = StateT Conf IO
 
 outputStr :: String -> Haskintex ()
 outputStr str = do
-  b <- verboseFlag <$> ask
+  b <- verboseFlag <$> get
   when b $ lift $ putStrLn str
 
 -- PARSING
@@ -147,12 +147,12 @@ p_writehaskell = do
            <|> (try $ string "\\begin{haskellpragmas}" >> return True)
   b <- choice $ fmap try [ string "[hidden]"  >> return False
                          , string "[visible]" >> return True
-                         , lift $ visibleFlag <$> ask ] -- When no option is given, take the default.
+                         , lift $ visibleFlag <$> get ] -- When no option is given, take the default.
   h <- manyTill anyChar $ try $ string $ if isH then "\\end{haskellpragmas}" else "\\end{writehaskell}"
   return $ WriteHaskell b isH $ pack h
 
 readMemo :: Parser Bool
-readMemo = (char '[' *> choice xs <* char ']') <|> lift (memoFlag <$> ask)
+readMemo = (char '[' *> choice xs <* char ']') <|> lift (memoFlag <$> get)
   where
     xs = [ string "memo" >> return True
          , string "notmemo" >> return False ]
@@ -331,11 +331,11 @@ errorString (GhcException e) = "GHC exception: " ++ e
 --   Useful if you want to call /haskintex/ from another program.
 --   This function does /not/ do any system call.
 haskintex :: [String] -> IO ()
-haskintex = runReaderT haskintexmain . readConf
+haskintex = evalStateT haskintexmain . readConf
 
 haskintexmain :: Haskintex ()
 haskintexmain = do
-  flags <- ask
+  flags <- get
   if -- If the help flag is passed, ignore everything else
      -- and just print the help.
      helpFlag flags
@@ -350,7 +350,7 @@ commas = concat . intersperse ", "
 
 showEnabledFlags :: Haskintex ()
 showEnabledFlags = do
-  c <- ask
+  c <- get
   outputStr $ "Enabled flags: "
            ++ commas (foldr (\(str,f) xs -> if f c then str : xs else xs) [] supportedFlags)
            ++ "."
@@ -358,8 +358,8 @@ showEnabledFlags = do
 reportWarnings :: Haskintex ()
 reportWarnings = do
   -- Combination of manual and lhs2tex flags.
-  manFlag <- manualFlag  <$> ask
-  lhsFlag <- lhs2texFlag <$> ask
+  manFlag <- manualFlag  <$> get
+  lhsFlag <- lhs2texFlag <$> get
   when (manFlag && lhsFlag) $
     outputStr "Warning: lhs2tex flag is useless in presence of manual flag."
 
@@ -373,19 +373,19 @@ haskintexFile fp_ = do
   -- Warnings
   reportWarnings
   -- Other unknown flags passed.
-  uFlags <- unknownFlags <$> ask
+  uFlags <- unknownFlags <$> get
   unless (null uFlags) $
     outputStr $ "Unsupported flags: " ++ commas uFlags ++ "."
   -- File parsing.
   outputStr $ "Reading " ++ fp ++ "..."
-  vFlag <- visibleFlag <$> ask
+  vFlag <- visibleFlag <$> get
   t <- lift $ T.readFile fp
   pres <- runParserT parseSyntax () fp t
   case pres of
     Left err -> outputStr $ "Reading of " ++ fp ++ " failed:\n" ++ show err
     Right s -> do
       -- Zero pass: In case of debugging, write down the parsed AST.
-      dbugFlag <- debugFlag <$> ask
+      dbugFlag <- debugFlag <$> get
       when dbugFlag $ do
         let debugfp = dropExtension (takeFileName fp) ++ ".debughtex"
         outputStr $ "Writing file " ++ debugfp ++ " with debugging output..."
@@ -398,15 +398,15 @@ haskintexFile fp_ = do
       lift $ T.writeFile (modName ++ ".hs") $ hsH <> moduleHeader <> hs
       -- Second pass: Evaluate expressions using 'evalCode'.
       outputStr $ "Evaluating expressions in " ++ fp ++ "..."
-      mFlag <- manualFlag <$> ask
-      lhsFlag <- lhs2texFlag <$> ask
+      mFlag <- manualFlag <$> get
+      lhsFlag <- lhs2texFlag <$> get
       l <- evalCode modName mFlag lhsFlag s
       -- Write final output.
       let fp' = dropExtension (takeFileName fp) ++ ".tex"
           writeit = do outputStr $ "Writing final file at " ++ fp' ++ "..."
                        lift $ T.writeFile fp' l
-      outFlag <- stdoutFlag <$> ask
-      overFlag <- overwriteFlag <$> ask
+      outFlag <- stdoutFlag <$> get
+      overFlag <- overwriteFlag <$> get
       nonew <- lift $ doesFileExist fp'
       let finalOutput
            | outFlag = do outputStr "Sending final output to stdout..."
@@ -422,7 +422,7 @@ haskintexFile fp_ = do
            | otherwise = writeit
       finalOutput
       -- If the keep flag is not set, remove the haskell source file.
-      kFlag <- keepFlag <$> ask
+      kFlag <- keepFlag <$> get
       unless kFlag $ do
         outputStr $ "Removing Haskell source file " ++ modName ++ ".hs "
                   ++ "(use -keep to avoid this)..."
