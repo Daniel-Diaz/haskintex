@@ -13,9 +13,8 @@ import Data.Text (pack,unpack)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 -- Parser
--- import Data.Attoparsec.Text
 import Text.Parsec hiding (many,(<|>))
-import Text.Parsec.Text
+import Text.Parsec.Text ()
 -- Transformers
 import Control.Monad (when,unless)
 import Control.Monad.Trans.Class
@@ -65,6 +64,8 @@ data Syntax =
     deriving Show -- Show instance for debugging.
 
 -- PARSING
+
+type Parser = ParsecT Text () Haskintex
 
 parseSyntax :: Bool -> Parser Syntax
 parseSyntax v = do
@@ -359,9 +360,8 @@ haskintexFile fp_ = do
   outputStr $ "Reading " ++ fp ++ "..."
   vFlag <- visibleFlag <$> ask
   t <- lift $ T.readFile fp
-  -- case parseOnly (parseSyntax vFlag) t of
-    -- Left err -> outputStr $ "Reading of " ++ fp ++ " failed: " ++ err
-  case parse (parseSyntax vFlag) fp t of
+  pres <- runParserT (parseSyntax vFlag) () fp t
+  case pres of
     Left err -> outputStr $ "Reading of " ++ fp ++ " failed:\n" ++ show err
     Right s -> do
       -- Zero pass: In case of debugging, write down the parsed AST.
