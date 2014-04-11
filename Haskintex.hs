@@ -55,11 +55,16 @@ import Language.Haskell.Interpreter
 --
 data Syntax =
     WriteLaTeX   Text
-  | WriteHaskell Bool Bool Text -- First Bool: False for Hidden, True for Visible.
-                                -- Second Bool: True for Header, False for Body.
-  | InsertHaTeX  Text
-  | InsertHaTeXIO Text
-  | EvalHaskell  Bool Text -- False for Command, True for Environment
+  | WriteHaskell Bool -- Visibility: False for Hidden, True for Visible
+                 Bool -- Location: True for Header, False for Body
+                 Text
+  | InsertHaTeX  Bool -- Memorized expression?
+                 Text
+  | InsertHaTeXIO Bool -- Memorized expression?
+                  Text
+  | EvalHaskell  Bool -- Type: False for Command, True for Environment
+                 Bool -- Memorized expression?
+                 Text
   | Sequence     [Syntax]
     deriving Show -- Show instance for debugging.
 
@@ -69,46 +74,56 @@ type Parser = ParsecT Text () Haskintex
 
 parseSyntax :: Parser Syntax
 parseSyntax = do
-  s <- fmap Sequence $ many $ choice $ fmap try [ p_writehaskell, p_inserthatex, p_inserthatexio , p_evalhaskell, p_writelatex ]
+  s <- fmap Sequence $ many $ choice [ p_writehaskell, p_inserthatex False , p_inserthatex True , p_evalhaskell, p_writelatex ]
   eof
   return s
 
 p_writehaskell :: Parser Syntax
 p_writehaskell = do
   isH <- (try $ string "\\begin{writehaskell}" >> return False)
-           <|> (string "\\begin{haskellpragmas}" >> return True)
+           <|> (try $ string "\\begin{haskellpragmas}" >> return True)
   b <- choice $ fmap try [ string "[hidden]"  >> return False
                          , string "[visible]" >> return True
                          , lift $ visibleFlag <$> ask ] -- When no option is given, take the default.
   h <- manyTill anyChar $ try $ string $ if isH then "\\end{haskellpragmas}" else "\\end{writehaskell}"
   return $ WriteHaskell b isH $ pack h
 
-p_inserthatex :: Parser Syntax
-p_inserthatex = do
-  _ <- string "\\hatex{"
-  h <- p_haskell 0
-  return $ InsertHaTeX $ pack h
+readMemo :: Parser Bool
+readMemo = (char '[' *> choice xs <* char ']') <|> lift (memoFlag <$> ask)
+  where
+    xs = [ string "memo" >> return True
+         , string "notmemo" >> return False ]
 
-p_inserthatexio :: Parser Syntax
-p_inserthatexio = do
-  _ <- string "\\iohatex{"
+p_inserthatex :: Bool -- False for pure, True for IO
+              -> Parser Syntax
+p_inserthatex isIO = do
+  --
+  let iden = if isIO then "iohatex" else "hatex"
+      cons = if isIO then InsertHaTeXIO else InsertHaTeX
+  --
+  _ <- try $ string $ '\\' : iden
+  b <- readMemo
+  char '{'
   h <- p_haskell 0
-  return $ InsertHaTeXIO $ pack h
+  return $ cons b $ pack h
 
 p_evalhaskell :: Parser Syntax
-p_evalhaskell = choice $ fmap try [ p_evalhaskellenv, p_evalhaskellcomm ]
+p_evalhaskell = choice [ p_evalhaskellenv, p_evalhaskellcomm ]
 
 p_evalhaskellenv :: Parser Syntax
 p_evalhaskellenv = do
-  _ <- string "\\begin{evalhaskell}"
+  _ <- try $ string "\\begin{evalhaskell}"
+  b <- readMemo
   h <- manyTill anyChar $ try $ string "\\end{evalhaskell}"
-  return $ EvalHaskell True $ pack h
+  return $ EvalHaskell True b $ pack h
 
 p_evalhaskellcomm :: Parser Syntax
 p_evalhaskellcomm = do
-  _  <- string "\\evalhaskell{"
+  _  <- try $ string "\\evalhaskell"
+  b <- readMemo
+  char '{'
   h  <- p_haskell 0
-  return $ EvalHaskell False $ pack h
+  return $ EvalHaskell False b $ pack h
 
 p_haskell :: Int -> Parser String
 p_haskell n = choice [
@@ -170,7 +185,7 @@ evalCode modName mFlag lhsFlag = go
                  | lhsFlag = TeXEnv "code" [] $ raw x
                  | otherwise = verbatim x
          in return $ render $ f t
-    go (InsertHaTeX t) = do
+    go (InsertHaTeX isMemo t) = do
          let e = unpack $ T.strip t
              int = do
                loadModules [modName]
@@ -185,7 +200,7 @@ evalCode modName mFlag lhsFlag = go
                ++ errorString err
              return mempty
            Right l -> return $ render l
-    go (InsertHaTeXIO t) = do
+    go (InsertHaTeXIO isMemo t) = do
          let e = unpack $ T.strip t
              int = do
                loadModules [modName]
@@ -200,7 +215,7 @@ evalCode modName mFlag lhsFlag = go
                ++ errorString err
              return mempty
            Right l -> liftIO $ render <$> l
-    go (EvalHaskell env t) =
+    go (EvalHaskell env isMemo t) =
          let f :: Text -> LaTeX
              f x | mFlag = raw x -- Manual flag overrides lhs2tex flag behavior
                  | env && lhsFlag = TeXEnv "code" [] $ raw x
