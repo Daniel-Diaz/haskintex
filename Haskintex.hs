@@ -157,6 +157,9 @@ readMemo = (char '[' *> choice xs <* char ']') <|> lift (memoFlag <$> get)
     xs = [ string "memo" >> return True
          , string "notmemo" >> return False ]
 
+processExp :: Text -> Text
+processExp = T.unwords . T.words
+
 p_inserthatex :: Bool -- False for pure, True for IO
               -> Parser Syntax
 p_inserthatex isIO = do
@@ -168,7 +171,7 @@ p_inserthatex isIO = do
   b <- readMemo
   char '{'
   h <- p_haskell 0
-  return $ cons b $ T.strip $ pack h
+  return $ cons b $ processExp $ pack h
 
 p_evalhaskell :: Parser Syntax
 p_evalhaskell = choice [ p_evalhaskellenv, p_evalhaskellcomm ]
@@ -178,7 +181,7 @@ p_evalhaskellenv = do
   _ <- try $ string "\\begin{evalhaskell}"
   b <- readMemo
   h <- manyTill anyChar $ try $ string "\\end{evalhaskell}"
-  return $ EvalHaskell True b $ T.strip $ pack h
+  return $ EvalHaskell True b $ processExp $ pack h
 
 p_evalhaskellcomm :: Parser Syntax
 p_evalhaskellcomm = do
@@ -186,7 +189,7 @@ p_evalhaskellcomm = do
   b <- readMemo
   char '{'
   h  <- p_haskell 0
-  return $ EvalHaskell False b $ T.strip $ pack h
+  return $ EvalHaskell False b $ processExp $ pack h
 
 p_haskell :: Int -> Parser String
 p_haskell n = choice [
