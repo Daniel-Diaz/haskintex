@@ -256,6 +256,7 @@ data Conf = Conf
   , stdoutFlag    :: Bool
   , overwriteFlag :: Bool
   , debugFlag     :: Bool
+  , memoFlag      :: Bool
   , unknownFlags  :: [String]
   , inputs        :: [FilePath]
     }
@@ -271,10 +272,11 @@ supportedFlags =
   , ("stdout"    , stdoutFlag)
   , ("overwrite" , overwriteFlag)
   , ("debug"     , debugFlag)
+  , ("memo"      , memoFlag)
     ]
 
 readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False False False False False [] []
+readConf = go $ Conf False False False False False False False False False False [] []
   where
     go c [] = c
     go c (x:xs) =
@@ -291,6 +293,7 @@ readConf = go $ Conf False False False False False False False False False [] []
              "stdout"    -> go (c {stdoutFlag    = True}) xs
              "overwrite" -> go (c {overwriteFlag = True}) xs
              "debug"     -> go (c {debugFlag     = True}) xs
+             "memo"      -> go (c {memoFlag      = True}) xs
              _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
         -- Otherwise, an input file.
         _ -> go (c {inputs = inputs c ++ [x]}) xs
