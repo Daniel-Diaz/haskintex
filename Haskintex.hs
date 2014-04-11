@@ -238,19 +238,19 @@ extractCode _ = mempty
 -- PASS 2: Evaluate Haskell expressions from processed Syntax.
 
 evalCode :: String -- ^ Auxiliary module name
-         -> Bool   -- ^ Is manual flag on?
-         -> Bool   -- ^ Is lhs2tex flag on?
          -> Syntax -> Haskintex Text
-evalCode modName mFlag lhsFlag = go
+evalCode modName = go
   where
     go (WriteLaTeX t) = return t
-    go (WriteHaskell b _ t) =
+    go (WriteHaskell b _ t) = do
+         mFlag <- manualFlag <$> get
+         lhsFlag <- lhs2texFlag <$> get
          let f :: Text -> LaTeX
              f x | not b = mempty
                  | mFlag = raw x
                  | lhsFlag = TeXEnv "code" [] $ raw x
                  | otherwise = verbatim x
-         in return $ render $ f t
+         return $ render $ f t
     go (InsertHaTeX isMemo t) = do
          let e = unpack t
              int = do
@@ -281,14 +281,16 @@ evalCode modName mFlag lhsFlag = go
                ++ errorString err
              return mempty
            Right l -> liftIO $ render <$> l
-    go (EvalHaskell env isMemo t) =
+    go (EvalHaskell env isMemo t) = do
+         mFlag <- manualFlag <$> get
+         lhsFlag <- lhs2texFlag <$> get
          let f :: Text -> LaTeX
              f x | mFlag = raw x -- Manual flag overrides lhs2tex flag behavior
                  | env && lhsFlag = TeXEnv "code" [] $ raw x
                  | lhsFlag = raw $ "|" <> x <> "|"
                  | env = verbatim $ layout x
                  | otherwise = verb x
-         in (render . f . pack) <$> ghc modName t
+         (render . f . pack) <$> ghc modName t
     go (Sequence xs) = mconcat <$> mapM go xs
 
 ghc :: String -> Text -> Haskintex String
@@ -400,9 +402,7 @@ haskintexFile fp_ = do
       lift $ T.writeFile (modName ++ ".hs") $ hsH <> moduleHeader <> hs
       -- Second pass: Evaluate expressions using 'evalCode'.
       outputStr $ "Evaluating expressions in " ++ fp ++ "..."
-      mFlag <- manualFlag <$> get
-      lhsFlag <- lhs2texFlag <$> get
-      l <- evalCode modName mFlag lhsFlag s
+      l <- evalCode modName s
       -- Write final output.
       let fp' = dropExtension (takeFileName fp) ++ ".tex"
           writeit = do outputStr $ "Writing final file at " ++ fp' ++ "..."
