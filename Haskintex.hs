@@ -463,9 +463,8 @@ haskintexmain = do
                  then lift $ putStr noFiles
                  else do memoTreeOpen
                          mapM_ haskintexFile xs
-                         memoTreeSave
                          willClean <- memocleanFlag <$> get
-                         when willClean memoTreeClean
+                         if willClean then memoTreeClean else memoTreeSave
 
 commas :: [String] -> String
 commas = concat . intersperse ", "
