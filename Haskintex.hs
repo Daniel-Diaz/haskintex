@@ -12,11 +12,12 @@ import System.IO (hFlush,stdout)
 import Data.Text (pack,unpack)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import Data.Text.Encoding
 -- Parser
 import Text.Parsec hiding (many,(<|>))
 import Text.Parsec.Text ()
 -- Transformers
-import Control.Monad (when,unless)
+import Control.Monad (when,unless,replicateM)
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 -- LaTeX
@@ -32,6 +33,15 @@ import Data.Version (showVersion)
 import Data.List (intersperse)
 -- GHC
 import Language.Haskell.Interpreter hiding (get)
+import Data.Typeable
+-- Map
+import qualified Data.Map as M
+-- Binary
+import Data.Binary.Put
+import Data.Binary.Get hiding (lookAhead)
+import Data.ByteString.Lazy (ByteString)
+import qualified Data.ByteString.Lazy as LB
+import qualified Data.ByteString as SB
 
 -- Syntax
 
@@ -81,8 +91,10 @@ data Conf = Conf
   , overwriteFlag :: Bool
   , debugFlag     :: Bool
   , memoFlag      :: Bool
+  , memocleanFlag :: Bool
   , unknownFlags  :: [String]
   , inputs        :: [FilePath]
+  , memoTree      :: MemoTree
     }
 
 supportedFlags :: [(String,Conf -> Bool)]
@@ -97,10 +109,11 @@ supportedFlags =
   , ("overwrite" , overwriteFlag)
   , ("debug"     , debugFlag)
   , ("memo"      , memoFlag)
+  , ("memoclean" , memocleanFlag)
     ]
 
 readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False False False False False False [] []
+readConf = go $ Conf False False False False False False False False False False False [] [] M.empty
   where
     go c [] = c
     go c (x:xs) =
@@ -118,6 +131,7 @@ readConf = go $ Conf False False False False False False False False False False
              "overwrite" -> go (c {overwriteFlag = True}) xs
              "debug"     -> go (c {debugFlag     = True}) xs
              "memo"      -> go (c {memoFlag      = True}) xs
+             "memoclean" -> go (c {memocleanFlag = True}) xs
              _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
         -- Otherwise, an input file.
         _ -> go (c {inputs = inputs c ++ [x]}) xs
@@ -228,6 +242,120 @@ p_writelatex = (WriteLaTeX . pack) <$>
              , return True
              ]
 
+----------------------------------------------------------
+----------------------------------------------------------
+-- MEMO TREE
+
+-- | A 'MemoTree' maps each expression to its reduced form.
+type MemoTree = M.Map Text Text
+
+memoreduce :: Typeable t
+           => String -- ^ Auxiliar module name
+           -> Bool -- ^ Is this expression memorized?
+           -> Text -- ^ Input
+           -> t -- ^ Type
+           -> (t -> Haskintex Text) -- ^ Rendering function
+           -> Haskintex Text
+memoreduce modName isMemo t ty f = do
+  let e = unpack t
+  outputStr $ "Evaluation (" ++ showsTypeRep (typeRep $ Just t) "" ++ "): " ++ e
+  memt <- memoTree <$> get
+  let p = if isMemo then M.lookup t memt else Nothing
+  case p of
+    Nothing -> do
+      let int = do
+             loadModules [modName]
+             setTopLevelModules [modName]
+             setImports ["Prelude"]
+             interpret e ty
+      r <- runInterpreter int
+      case r of
+        Left err -> do
+          outputStr $ "Warning: Error while evaluating the expression.\n"
+                   ++ errorString err
+          return mempty
+        Right x -> do
+          -- Render result
+          t' <- f x
+          -- If the expression is marked to be memorized, store it in the 'MemoTree'.
+          when isMemo $ do
+            modify $ \st -> st { memoTree = M.insert t t' $ memoTree st }
+            outputStr $ "-> Result has been memorized."
+          -- Return result
+          return t'
+    Just o -> do
+      outputStr "-> Result of the evaluation recovered from memo tree."
+      return o
+
+memoTreeToBinary :: MemoTree -> ByteString
+memoTreeToBinary memt = runPut $ do
+  putWord16le $ fromIntegral $ M.size memt
+  mapM_ (\(t,t') -> do
+    let b  = encodeUtf8 t
+        b' = encodeUtf8 t'
+    putWord16le $ fromIntegral $ SB.length b
+    putWord16le $ fromIntegral $ SB.length b'
+    putByteString b
+    putByteString b'
+    ) $ M.toAscList memt
+
+memoTreeFromBinary :: ByteString -> Either String MemoTree
+memoTreeFromBinary b =
+  case runGetOrFail getMemoTree b of
+    Left (_,_,err) -> Left err
+    Right (_,_,memt) -> Right memt
+
+getMemoTree :: Get MemoTree
+getMemoTree = do
+  n <- fromIntegral <$> getWord16le
+  fmap M.fromAscList $ replicateM n $ do
+    l  <- getWord16le
+    l' <- getWord16le
+    b  <- getByteString $ fromIntegral l
+    b' <- getByteString $ fromIntegral l'
+    return (decodeUtf8 b, decodeUtf8 b')
+
+memoTreeOpen :: Haskintex ()
+memoTreeOpen = do
+  d <- liftIO $ getAppUserDataDirectory "haskintex"
+  let fp = d </> "memotree"
+  b <- liftIO $ doesFileExist fp
+  if b then do t <- liftIO $ LB.readFile fp
+               case memoTreeFromBinary t of
+                 Left err -> do
+                   outputStr $ "Error: memotree failed to read: " ++ err
+                   outputStr "-> Using empty memotree."
+                   modify $ \st -> st { memoTree = M.empty }
+                 Right memt -> do
+                   modify $ \st -> st { memoTree = memt }
+                   outputStr "Info: memotree loaded."
+       else do outputStr "Info: memotree does not exist."
+               outputStr "-> Using empty memotree."
+               modify $ \st -> st { memoTree = M.empty }
+
+memoTreeSave :: Haskintex ()
+memoTreeSave = do
+  memt <- memoTree <$> get
+  unless (M.null memt) $ do
+    outputStr "Saving memotree..."
+    liftIO $ do
+      d <- getAppUserDataDirectory "haskintex"
+      createDirectoryIfMissing True d
+      let fp = d </> "memotree"
+      LB.writeFile fp $ memoTreeToBinary memt
+    outputStr "Info: memotree saved."
+
+memoTreeClean :: Haskintex ()
+memoTreeClean = do
+  d <- liftIO $ getAppUserDataDirectory "haskintex"
+  let fp = d </> "memotree"
+  b <- liftIO $ doesFileExist fp
+  if b then do liftIO $ removeFile fp
+               outputStr "Info: memotree removed."
+       else outputStr "Warning: tried to remove memotree, but it was not found."
+
+----------------------------------------------------------
+
 -- PASS 1: Extract code from processed Syntax.
 
 extractCode :: Syntax -> (Text,Text)
@@ -251,36 +379,8 @@ evalCode modName = go
                  | lhsFlag = TeXEnv "code" [] $ raw x
                  | otherwise = verbatim x
          return $ render $ f t
-    go (InsertHaTeX isMemo t) = do
-         let e = unpack t
-             int = do
-               loadModules [modName]
-               setTopLevelModules [modName]
-               setImports ["Prelude"]
-               interpret e (as :: LaTeX)
-         outputStr $ "Evaluation (LaTeX): " ++ e
-         r <- runInterpreter int
-         case r of
-           Left err -> do
-             outputStr $ "Warning: Error while evaluating the expression.\n"
-               ++ errorString err
-             return mempty
-           Right l -> return $ render l
-    go (InsertHaTeXIO isMemo t) = do
-         let e = unpack t
-             int = do
-               loadModules [modName]
-               setTopLevelModules [modName]
-               setImports ["Prelude"]
-               interpret e (as :: IO LaTeX)
-         outputStr $ "Evaluation (IO LaTeX): " ++ e
-         r <- runInterpreter int
-         case r of
-           Left err -> do
-             outputStr $ "Warning: Error while evaluating the expression.\n"
-               ++ errorString err
-             return mempty
-           Right l -> liftIO $ render <$> l
+    go (InsertHaTeX   isMemo t) = memoreduce modName isMemo t (as ::    LaTeX) (return .      render)
+    go (InsertHaTeXIO isMemo t) = memoreduce modName isMemo t (as :: IO LaTeX) (liftIO . fmap render)
     go (EvalHaskell env isMemo t) = do
          mFlag <- manualFlag <$> get
          lhsFlag <- lhs2texFlag <$> get
@@ -290,19 +390,33 @@ evalCode modName = go
                  | lhsFlag = raw $ "|" <> x <> "|"
                  | env = verbatim $ layout x
                  | otherwise = verb x
-         (render . f . pack) <$> ghc modName t
+         (render . f) <$> ghc modName isMemo t
     go (Sequence xs) = mconcat <$> mapM go xs
 
-ghc :: String -> Text -> Haskintex String
-ghc modName e = do
-  let e' = unpack e
-  outputStr $ "Evaluation: " ++ e'
-  lift $ init <$> readProcess "ghc" 
-     -- Disable reading of .ghci files.
-     [ "-ignore-dot-ghci"
-     -- Evaluation loading the temporal module.
-     , "-e", e', modName ++ ".hs"
-       ] []
+ghc :: String -> Bool -> Text -> Haskintex Text
+ghc modName isMemo t = do
+  let e = unpack t
+  outputStr $ "Evaluation: " ++ e
+  memt <- memoTree <$> get
+  let p = if isMemo then M.lookup t memt else Nothing
+  case p of
+    Nothing -> do
+      -- Run GHC externally and read the result.
+      r <- lift $ pack . init <$> readProcess "ghc" 
+                -- Disable reading of .ghci files.
+                [ "-ignore-dot-ghci"
+                -- Evaluation loading the temporal module.
+                , "-e", e, modName ++ ".hs"
+                  ] []
+      -- If the expression is marked to be memorized, we do so.
+      when isMemo $ do
+         modify $ \st -> st { memoTree = M.insert t r $ memoTree st }
+         outputStr "-> Result has been memorized."
+      -- Return result
+      return r
+    Just o -> do
+      outputStr "-> Result of the evaluation recovered from memo tree."
+      return o
 
 maxLineLength :: Int
 maxLineLength = 60
@@ -347,7 +461,11 @@ haskintexmain = do
      else let xs = inputs flags
           in  if null xs
                  then lift $ putStr noFiles
-                 else mapM_ haskintexFile xs
+                 else do memoTreeOpen
+                         mapM_ haskintexFile xs
+                         memoTreeSave
+                         willClean <- memocleanFlag <$> get
+                         when willClean memoTreeClean
 
 commas :: [String] -> String
 commas = concat . intersperse ", "

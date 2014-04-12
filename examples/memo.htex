@@ -1,0 +1,17 @@
+\documentclass{article}
+\begin{document}
+\begin{writehaskell}
+minNumber :: Integer
+minNumber = 1
+
+maxNumber :: Integer
+maxNumber = 10000000
+\end{writehaskell}
+The teacher asked the student:
+``What is the result of suming all the numbers from \evalhaskell{minNumber} to \evalhaskell{maxNumber}''.
+After a few seconds thinking about it, the student gave an answer.
+\begin{itemize}
+\item[-] The result is \evalhaskell[memo]{sum [minNumber .. maxNumber]}.
+\item[-] That is correct! The result is \evalhaskell[memo]{sum [minNumber .. maxNumber]}.
+\end{itemize}
+\end{document}
