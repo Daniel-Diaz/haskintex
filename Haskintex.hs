@@ -350,9 +350,9 @@ memoTreeClean = do
   d <- liftIO $ getAppUserDataDirectory "haskintex"
   let fp = d </> "memotree"
   b <- liftIO $ doesFileExist fp
-  if b then do liftIO $ removeFile fp
-               outputStr "Info: memotree removed."
-       else outputStr "Warning: tried to remove memotree, but it was not found."
+  when b $ do 
+    liftIO $ removeFile fp
+    outputStr "Info: memotree removed."
 
 ----------------------------------------------------------
 
