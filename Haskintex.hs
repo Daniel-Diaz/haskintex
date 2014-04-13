@@ -34,6 +34,8 @@ import Data.List (intersperse)
 -- GHC
 import Language.Haskell.Interpreter hiding (get)
 import Data.Typeable
+import qualified Language.Haskell.Exts.Pretty as H
+import qualified Language.Haskell.Exts.Parser as H
 -- Map
 import qualified Data.Map as M
 -- Binary
@@ -172,7 +174,10 @@ readMemo = (char '[' *> choice xs <* char ']') <|> lift (memoFlag <$> get)
          , string "notmemo" >> return False ]
 
 processExp :: Text -> Text
-processExp = T.unwords . T.words
+processExp t =
+  case H.parseExp (unpack t) of
+    H.ParseOk e -> pack $ H.prettyPrint e 
+    _ -> t
 
 p_inserthatex :: Bool -- False for pure, True for IO
               -> Parser Syntax
@@ -286,6 +291,27 @@ memoreduce modName isMemo t ty f = do
     Just o -> do
       outputStr "-> Result of the evaluation recovered from memo tree."
       return o
+
+{- Memo Tree Format
+
+A memo tree is stored as a list of (key,value) in key ascending order.
+Keys and values are encoded in UTF-8.
+
+| offset |   description        | size (in bytes) |
+---------------------------------------------------
+| 00     | Number of blocks     | 2               |
+| 02     | Zero or more blocks  | variable        |
+
+Each block has the following structure:
+
+| offset |   description        | size (in bytes) |
+---------------------------------------------------
+| 00     | Length of key (k)    | 2               |
+| 02     | Length of value (v)  | 2               |
+| 04     | Key                  | k               |
+| 04+k   | Value                | v               |
+
+-}
 
 memoTreeToBinary :: MemoTree -> ByteString
 memoTreeToBinary memt = runPut $ do

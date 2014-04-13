@@ -49,6 +49,7 @@ library
                , hint >= 0.3.3.5 && < 0.5
                , containers
                , binary
+               , haskell-src-exts
   exposed-modules: Haskintex
   other-modules: Paths_haskintex
   ghc-options: -Wall
