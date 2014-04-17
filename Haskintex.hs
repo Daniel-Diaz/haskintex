@@ -26,6 +26,7 @@ import Text.LaTeX.Base.Syntax
 -- Utils
 import Control.Applicative
 import Data.Foldable (foldMap)
+import Numeric (showFFloat)
 -- Paths
 import Paths_haskintex
 import Data.Version (showVersion)
@@ -354,7 +355,12 @@ memoTreeOpen = do
                    modify $ \st -> st { memoTree = M.empty }
                  Right memt -> do
                    modify $ \st -> st { memoTree = memt }
-                   outputStr "Info: memotree loaded."
+                   let n = LB.length t
+                       kbs :: Double
+                       kbs = fromIntegral n / 1024
+                       s = if kbs < 1 then show n ++ " Bs"
+                                      else showFFloat (Just 2) kbs " KBs"
+                   outputStr $ "Info: memotree loaded (" ++ s ++ ")."
        else do outputStr "Info: memotree does not exist."
                outputStr "-> Using empty memotree."
                modify $ \st -> st { memoTree = M.empty }
