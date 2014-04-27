@@ -630,6 +630,13 @@ help = unlines [
   , "              .debughtex with the AST of the internal representation of the"
   , "              input file haskintex uses."
   , ""
+  , "  -memo       Unless otherwise specified, every evalhaskell, hatex or iohatex"
+  , "              command (or environment) will be called with the memo option."
+  , ""
+  , "  -memoclean  Cleans the memo tree after the execution of haskintex. If "
+  , "              several files are processed, the memo tree will be cleaned"
+  , "              after processing all of them."
+  , ""
   , "Any unsupported flag will be ignored."
   ]
 
