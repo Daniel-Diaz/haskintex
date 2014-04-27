@@ -22,13 +22,14 @@ import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 -- LaTeX
 import Text.LaTeX hiding (version)
+import qualified Text.LaTeX as Hatex
 import Text.LaTeX.Base.Syntax
 -- Utils
 import Control.Applicative
 import Data.Foldable (foldMap)
 import Numeric (showFFloat)
 -- Paths
-import Paths_haskintex
+import Paths_haskintex (version)
 import Data.Version (showVersion)
 -- Lists
 import Data.List (intersperse)
@@ -586,6 +587,8 @@ help :: String
 help = unlines [
     "You are using haskintex version " ++ showVersion version ++ "."
   , "http://daniel-diaz.github.io/projects/haskintex"
+  , ""
+  , "The underlying HaTeX version is " ++ showVersion Hatex.version ++ "."
   , ""
   , "Usage and flags:"
   , "Any argument passed to haskintex that starts with '-' will be considered"
