@@ -1,5 +1,5 @@
 name:                haskintex
-version:             0.5.0.0
+version:             0.5.0.1
 synopsis:            Haskell Evaluation inside of LaTeX code.
 description:
   The /haskintex/ (Haskell in LaTeX) program is a tool that reads a LaTeX file and evaluates Haskell expressions contained
@@ -25,6 +25,7 @@ extra-source-files:  README.md
                      examples/pragmas.htex
                      examples/string.htex
                      examples/threaded.htex
+                     examples/memo.htex
 cabal-version:       >=1.10
 
 executable haskintex
