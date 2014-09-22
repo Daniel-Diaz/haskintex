@@ -265,7 +265,7 @@ memoreduce :: Typeable t
            -> Haskintex Text
 memoreduce modName isMemo t ty f = do
   let e = unpack t
-  outputStr $ "Evaluation (" ++ showsTypeRep (typeRep $ Just t) "" ++ "): " ++ e
+  outputStr $ "Evaluation (" ++ showsTypeRep (typeRep $ Just ty) "" ++ "): " ++ e
   memt <- memoTree <$> get
   let p = if isMemo then M.lookup t memt else Nothing
   case p of
