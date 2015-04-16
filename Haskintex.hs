@@ -1,5 +1,5 @@
 
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings, CPP #-}
 
 module Haskintex (haskintex) where
 
@@ -26,7 +26,9 @@ import qualified Text.LaTeX as Hatex
 import Text.LaTeX.Base.Syntax
 -- Utils
 import Control.Applicative
+#if !MIN_VERSION_base(4,8,0)
 import Data.Foldable (foldMap)
+#endif
 import Numeric (showFFloat)
 -- Paths
 import Paths_haskintex (version)
