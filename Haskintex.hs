@@ -40,6 +40,7 @@ import Language.Haskell.Interpreter hiding (get)
 import Data.Typeable
 import qualified Language.Haskell.Exts.Pretty as H
 import qualified Language.Haskell.Exts.Parser as H
+import qualified Language.Haskell.Exts.Syntax as H
 -- Map
 import qualified Data.Map as M
 -- Binary
@@ -98,6 +99,7 @@ data Conf = Conf
   , debugFlag     :: Bool
   , memoFlag      :: Bool
   , memocleanFlag :: Bool
+  , autotexyFlag  :: Bool
   , unknownFlags  :: [String]
   , inputs        :: [FilePath]
   , memoTree      :: MemoTree
@@ -116,10 +118,11 @@ supportedFlags =
   , ("debug"     , debugFlag)
   , ("memo"      , memoFlag)
   , ("memoclean" , memocleanFlag)
+  , ("autotexy"  , autotexyFlag)
     ]
 
 readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False False False False False False False [] [] M.empty
+readConf = go $ Conf False False False False False False False False False False False False [] [] M.empty
   where
     go c [] = c
     go c (x:xs) =
@@ -138,6 +141,7 @@ readConf = go $ Conf False False False False False False False False False False
              "debug"     -> go (c {debugFlag     = True}) xs
              "memo"      -> go (c {memoFlag      = True}) xs
              "memoclean" -> go (c {memocleanFlag = True}) xs
+             "autotexy"  -> go (c {autotexyFlag  = True}) xs
              _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
         -- Otherwise, an input file.
         _ -> go (c {inputs = inputs c ++ [x]}) xs
@@ -177,10 +181,12 @@ readMemo = (char '[' *> choice xs <* char ']') <|> lift (memoFlag <$> get)
     xs = [ string "memo" >> return True
          , string "notmemo" >> return False ]
 
-processExp :: Text -> Text
-processExp t =
-  case H.parseExp (unpack t) of
-    H.ParseOk e -> pack $ H.prettyPrint e 
+processExp :: Text -> Parser Text
+processExp t = do
+  b <- lift $ autotexyFlag <$> get
+  return $ case H.parseExp (unpack t) of
+    H.ParseOk e -> pack $ H.prettyPrint $
+      if b then H.App (H.Var $ H.UnQual $ H.Ident "texy") $ e else e
     _ -> t
 
 p_inserthatex :: Bool -- False for pure, True for IO
@@ -194,7 +200,7 @@ p_inserthatex isIO = do
   b <- readMemo
   _ <- char '{'
   h <- p_haskell 0
-  return $ cons b $ processExp $ pack h
+  cons b <$> processExp (pack h)
 
 p_evalhaskell :: Parser Syntax
 p_evalhaskell = choice [ p_evalhaskellenv, p_evalhaskellcomm ]
@@ -204,7 +210,7 @@ p_evalhaskellenv = do
   _ <- try $ string "\\begin{evalhaskell}"
   b <- readMemo
   h <- manyTill anyChar $ try $ string "\\end{evalhaskell}"
-  return $ EvalHaskell True b $ processExp $ pack h
+  EvalHaskell True b <$> processExp (pack h)
 
 p_evalhaskellcomm :: Parser Syntax
 p_evalhaskellcomm = do
@@ -212,7 +218,7 @@ p_evalhaskellcomm = do
   b <- readMemo
   _ <- char '{'
   h  <- p_haskell 0
-  return $ EvalHaskell False b $ processExp $ pack h
+  EvalHaskell False b <$> processExp (pack h)
 
 p_haskell :: Int -> Parser String
 p_haskell n = choice [
