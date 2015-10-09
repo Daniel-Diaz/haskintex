@@ -34,9 +34,10 @@ import Numeric (showFFloat)
 import Paths_haskintex (version)
 import Data.Version (showVersion)
 -- Lists
-import Data.List (intersperse)
+import Data.List (intersperse, isSuffixOf)
 -- GHC
 import Language.Haskell.Interpreter hiding (get)
+import Language.Haskell.Interpreter.Unsafe (unsafeRunInterpreterWithArgs)
 import Data.Typeable
 import qualified Language.Haskell.Exts.Pretty as H
 import qualified Language.Haskell.Exts.Parser as H
@@ -100,6 +101,7 @@ data Conf = Conf
   , memoFlag      :: Bool
   , memocleanFlag :: Bool
   , autotexyFlag  :: Bool
+  , nosandboxFlag :: Bool
   , unknownFlags  :: [String]
   , inputs        :: [FilePath]
   , memoTree      :: MemoTree
@@ -119,10 +121,11 @@ supportedFlags =
   , ("memo"      , memoFlag)
   , ("memoclean" , memocleanFlag)
   , ("autotexy"  , autotexyFlag)
+  , ("nosandbox" , nosandboxFlag)
     ]
 
 readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False False False False False False False False [] [] M.empty
+readConf = go $ Conf False False False False False False False False False False False False False [] [] M.empty
   where
     go c [] = c
     go c (x:xs) =
@@ -142,6 +145,7 @@ readConf = go $ Conf False False False False False False False False False False
              "memo"      -> go (c {memoFlag      = True}) xs
              "memoclean" -> go (c {memocleanFlag = True}) xs
              "autotexy"  -> go (c {autotexyFlag  = True}) xs
+             "nosandbox" -> go (c {nosandboxFlag = True}) xs
              _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
         -- Otherwise, an input file.
         _ -> go (c {inputs = inputs c ++ [x]}) xs
@@ -288,7 +292,22 @@ memoreduce modName isMemo t ty f = do
              setTopLevelModules [modName]
              setImports ["Prelude"]
              interpret e ty
-      r <- runInterpreter int
+      -- Sandbox recognition
+      inSandbox <- lift $ doesDirectoryExist ".cabal-sandbox"
+      r <- if inSandbox
+              then do outputStr "Sandbox detected."
+                      noSandbox <- nosandboxFlag <$> get
+                      if noSandbox
+                         then do outputStr "Ignoring sandbox."
+                                 runInterpreter int
+                         else do sand <- lift $ getDirectoryContents ".cabal-sandbox"
+                                 let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
+                                 case pkgdbs of
+                                   pkgdb : _ -> do
+                                     outputStr $ "Using sandbox package db: " ++ pkgdb
+                                     unsafeRunInterpreterWithArgs ["-package-db .cabal-sandbox/" ++ pkgdb] int
+                                   _ -> runInterpreter int
+              else runInterpreter int
       case r of
         Left err -> do
           outputStr $ "Warning: Error while evaluating the expression.\n"
@@ -654,6 +673,8 @@ help = unlines [
   , "              or iohatex command. This effectively allows the user to write"
   , "              expressions in types other than LaTeX and have haskintex to perform"
   , "              the required transformation."
+  , ""
+  , "  -nosandbox  Do not use the sandbox package db even in the presence of one."
   , ""
   , "Any unsupported flag will be ignored."
   ]
