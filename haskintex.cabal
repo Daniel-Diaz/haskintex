@@ -1,5 +1,5 @@
 name:                haskintex
-version:             0.5.0.3
+version:             0.5.1.0
 synopsis:            Haskell Evaluation inside of LaTeX code.
 description:
   The /haskintex/ (Haskell in LaTeX) program is a tool that reads a LaTeX file and evaluates Haskell expressions contained
@@ -8,6 +8,8 @@ description:
   Additionally, it is possible to include expressions of 'LaTeX' type (see /HaTeX/ package) and render them as LaTeX code.
   You can freely add any Haskell code you need, and make this code appear /optionally/ in the LaTeX output. It is a tiny program,
   and therefore, easy to understand, use and predict.
+  .
+  Addition from last version: new flag autotexy. See project homepage for description.
 homepage:            http://daniel-diaz.github.io/projects/haskintex
 bug-reports:         https://github.com/Daniel-Diaz/haskintex/issues
 license:             BSD3
