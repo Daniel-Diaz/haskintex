@@ -181,12 +181,12 @@ readMemo = (char '[' *> choice xs <* char ']') <|> lift (memoFlag <$> get)
     xs = [ string "memo" >> return True
          , string "notmemo" >> return False ]
 
-processExp :: Text -> Parser Text
-processExp t = do
-  b <- lift $ autotexyFlag <$> get
+processExp :: (H.Exp -> H.Exp) -- ^ Transformation to apply to Haskell Expression
+           -> Text -- ^ Haskell expression
+           -> Parser Text
+processExp f t = do
   return $ case H.parseExp (unpack t) of
-    H.ParseOk e -> pack $ H.prettyPrint $
-      if b then H.App (H.Var $ H.UnQual $ H.Ident "texy") $ e else e
+    H.ParseOk e -> pack $ H.prettyPrint $ f e
     _ -> t
 
 p_inserthatex :: Bool -- False for pure, True for IO
@@ -200,7 +200,12 @@ p_inserthatex isIO = do
   b <- readMemo
   _ <- char '{'
   h <- p_haskell 0
-  cons b <$> processExp (pack h)
+  auto <- lift $ autotexyFlag <$> get
+  let v = H.Var . H.UnQual . H.Ident
+      f = if auto then H.App $ if isIO then v "fmap" `H.App` v "texy"
+                                       else v "texy" 
+                  else id
+  cons b <$> processExp f (pack h)
 
 p_evalhaskell :: Parser Syntax
 p_evalhaskell = choice [ p_evalhaskellenv, p_evalhaskellcomm ]
@@ -210,7 +215,7 @@ p_evalhaskellenv = do
   _ <- try $ string "\\begin{evalhaskell}"
   b <- readMemo
   h <- manyTill anyChar $ try $ string "\\end{evalhaskell}"
-  EvalHaskell True b <$> processExp (pack h)
+  EvalHaskell True b <$> processExp id (pack h)
 
 p_evalhaskellcomm :: Parser Syntax
 p_evalhaskellcomm = do
@@ -218,7 +223,7 @@ p_evalhaskellcomm = do
   b <- readMemo
   _ <- char '{'
   h  <- p_haskell 0
-  EvalHaskell False b <$> processExp (pack h)
+  EvalHaskell False b <$> processExp id (pack h)
 
 p_haskell :: Int -> Parser String
 p_haskell n = choice [
