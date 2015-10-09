@@ -650,6 +650,11 @@ help = unlines [
   , "              several files are processed, the memo tree will be cleaned"
   , "              after processing all of them."
   , ""
+  , "  -autotexy   Apply the function texy from HaTeX to every expression in a hatex"
+  , "              or iohatex command. This effectively allows the user to write"
+  , "              expressions in types other than LaTeX and have haskintex to perform"
+  , "              the required transformation."
+  , ""
   , "Any unsupported flag will be ignored."
   ]
 
