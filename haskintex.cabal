@@ -55,7 +55,7 @@ library
                , process >= 1.2.0
                , HaTeX >= 3.9.0.0
                , parsec >= 3.1.2
-               , hint >= 0.3.3 && < 0.5
+               , hint >= 0.3.3
                , containers >= 0.5.5
                , binary >= 0.7.1
                , haskell-src-exts >= 1.15.0
