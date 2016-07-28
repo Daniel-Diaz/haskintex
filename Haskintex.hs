@@ -185,12 +185,12 @@ readMemo = (char '[' *> choice xs <* char ']') <|> lift (memoFlag <$> get)
     xs = [ string "memo" >> return True
          , string "notmemo" >> return False ]
 
-processExp :: (H.Exp -> H.Exp) -- ^ Transformation to apply to Haskell Expression
+processExp :: (H.Exp () -> H.Exp ()) -- ^ Transformation to apply to Haskell Expression
            -> Text -- ^ Haskell expression
            -> Parser Text
 processExp f t = do
   return $ case H.parseExp (unpack t) of
-    H.ParseOk e -> pack $ H.prettyPrint $ f e
+    H.ParseOk e -> pack $ H.prettyPrint $ f $ const () <$> e
     _ -> t
 
 p_inserthatex :: Bool -- False for pure, True for IO
@@ -205,9 +205,9 @@ p_inserthatex isIO = do
   _ <- char '{'
   h <- p_haskell 0
   auto <- lift $ autotexyFlag <$> get
-  let v = H.Var . H.UnQual . H.Ident
-      f = if auto then H.App $ if isIO then v "fmap" `H.App` v "texy"
-                                       else v "texy" 
+  let v = H.Var () . H.UnQual () . H.Ident ()
+      f = if auto then H.App () $ if isIO then H.App () (v "fmap") (v "texy")
+                                          else v "texy" 
                   else id
   cons b <$> processExp f (pack h)
 
