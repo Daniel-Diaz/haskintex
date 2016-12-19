@@ -50,6 +50,8 @@ import Data.Binary.Get hiding (lookAhead)
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LB
 import qualified Data.ByteString as SB
+-- Shell
+import Shelly (shelly, bash)
 
 -- Syntax
 
@@ -102,6 +104,7 @@ data Conf = Conf
   , memocleanFlag :: Bool
   , autotexyFlag  :: Bool
   , nosandboxFlag :: Bool
+  , stackDbFlag   :: Bool
   , unknownFlags  :: [String]
   , inputs        :: [FilePath]
   , memoTree      :: MemoTree
@@ -122,10 +125,11 @@ supportedFlags =
   , ("memoclean" , memocleanFlag)
   , ("autotexy"  , autotexyFlag)
   , ("nosandbox" , nosandboxFlag)
+  , ("stackdb"   , stackDbFlag)
     ]
 
 readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False False False False False False False False False [] [] M.empty
+readConf = go $ Conf False False False False False False False False False False False False False False [] [] M.empty
   where
     go c [] = c
     go c (x:xs) =
@@ -146,6 +150,7 @@ readConf = go $ Conf False False False False False False False False False False
              "memoclean" -> go (c {memocleanFlag = True}) xs
              "autotexy"  -> go (c {autotexyFlag  = True}) xs
              "nosandbox" -> go (c {nosandboxFlag = True}) xs
+             "stackdb"   -> go (c {stackDbFlag   = True}) xs
              _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
         -- Otherwise, an input file.
         _ -> go (c {inputs = inputs c ++ [x]}) xs
@@ -207,7 +212,7 @@ p_inserthatex isIO = do
   auto <- lift $ autotexyFlag <$> get
   let v = H.Var () . H.UnQual () . H.Ident ()
       f = if auto then H.App () $ if isIO then H.App () (v "fmap") (v "texy")
-                                          else v "texy" 
+                                          else v "texy"
                   else id
   cons b <$> processExp f (pack h)
 
@@ -295,18 +300,28 @@ memoreduce modName isMemo t ty f = do
       -- Sandbox recognition
       inSandbox <- lift $ doesDirectoryExist ".cabal-sandbox"
       r <- if inSandbox
-              then do outputStr "Sandbox detected."
-                      noSandbox <- nosandboxFlag <$> get
-                      if noSandbox
-                         then do outputStr "Ignoring sandbox."
-                                 runInterpreter int
-                         else do sand <- lift $ getDirectoryContents ".cabal-sandbox"
-                                 let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
-                                 case pkgdbs of
-                                   pkgdb : _ -> do
-                                     outputStr $ "Using sandbox package db: " ++ pkgdb
-                                     unsafeRunInterpreterWithArgs ["-package-db .cabal-sandbox/" ++ pkgdb] int
-                                   _ -> runInterpreter int
+              then do
+                outputStr "Sandbox detected."
+                noSandbox <- nosandboxFlag <$> get
+                if noSandbox
+                  then do
+                    outputStr "Ignoring sandbox."
+                    runInterpreter int
+                  else do
+                    stackDb <- stackDbFlag <$> get
+                    if stackDb
+                      then do
+                        pkgdb <- shelly $ bash "stack path" ["--local-pkg-db"]
+                        outputStr $ "Using sandbox package db: " ++ unpack pkgdb
+                        unsafeRunInterpreterWithArgs ["-package-db " ++ unpack pkgdb, "-package yaml"] int
+                      else do
+                        sand <- lift $ getDirectoryContents ".cabal-sandbox"
+                        let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
+                        case pkgdbs of
+                          pkgdb : _ -> do
+                            outputStr $ "Using sandbox package db: " ++ pkgdb
+                            unsafeRunInterpreterWithArgs ["-package-db .cabal-sandbox/" ++ pkgdb] int
+                          _ -> runInterpreter int
               else runInterpreter int
       case r of
         Left err -> do
@@ -415,7 +430,7 @@ memoTreeClean = do
   d <- liftIO $ getAppUserDataDirectory "haskintex"
   let fp = d </> "memotree"
   b <- liftIO $ doesFileExist fp
-  when b $ do 
+  when b $ do
     liftIO $ removeFile fp
     outputStr "Info: memotree removed."
 
@@ -467,7 +482,7 @@ ghc modName isMemo t = do
   case p of
     Nothing -> do
       -- Run GHC externally and read the result.
-      r <- lift $ pack . init <$> readProcess "ghc" 
+      r <- lift $ pack . init <$> readProcess "ghc"
                 -- Disable reading of .ghci files.
                 [ "-ignore-dot-ghci"
                 -- Evaluation loading the temporal module.
