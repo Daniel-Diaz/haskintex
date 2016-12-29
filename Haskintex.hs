@@ -105,6 +105,7 @@ data Conf = Conf
   , autotexyFlag  :: Bool
   , nosandboxFlag :: Bool
   , stackDbFlag   :: Bool
+  , werrorFlag    :: Bool
   , unknownFlags  :: [String]
   , inputs        :: [FilePath]
   , memoTree      :: MemoTree
@@ -126,10 +127,11 @@ supportedFlags =
   , ("autotexy"  , autotexyFlag)
   , ("nosandbox" , nosandboxFlag)
   , ("stackdb"   , stackDbFlag)
+  , ("werror"    , werrorFlag)
     ]
 
 readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False False False False False False False False False False [] [] M.empty
+readConf = go $ Conf False False False False False False False False False False False False False False False [] [] M.empty
   where
     go c [] = c
     go c (x:xs) =
@@ -151,6 +153,7 @@ readConf = go $ Conf False False False False False False False False False False
              "autotexy"  -> go (c {autotexyFlag  = True}) xs
              "nosandbox" -> go (c {nosandboxFlag = True}) xs
              "stackdb"   -> go (c {stackDbFlag   = True}) xs
+             "werror"    -> go (c {werrorFlag    = True}) xs
              _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
         -- Otherwise, an input file.
         _ -> go (c {inputs = inputs c ++ [x]}) xs
@@ -325,7 +328,11 @@ memoreduce modName isMemo t ty f = do
               else runInterpreter int
       case r of
         Left err -> do
-          outputStr $ "Warning: Error while evaluating the expression.\n"
+          shouldFail <- werrorFlag <$> get
+          if shouldFail
+            then fail $ "Error: failed while evaluating the expression: \n"
+                   ++ errorString err
+            else outputStr $ "Warning: Error while evaluating the expression.\n"
                    ++ errorString err
           return mempty
         Right x -> do
