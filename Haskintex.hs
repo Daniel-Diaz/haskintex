@@ -88,6 +88,28 @@ data Syntax =
 
 -- Configuration
 
+-- | Possible sources of package DBs. The value of the type is constructed from
+-- CLI argument and tells haskintex which strategy to use for package DB selection.
+--
+-- If no CLI argument is presented, haskintex tries to guess from local environment
+-- which package DB to use.
+data PackageDB =
+    CabalSandboxDB -- ^ Pick package-db from `.cabal-sandbox` folder
+  | StackDB -- ^ Pick package-db from `stack path`
+  deriving Show
+
+-- | True if the input value is cabal sandbox package-db
+isCabalSandboxDB :: PackageDB -> Bool
+isCabalSandboxDB v = case v of
+  CabalSandboxDB -> True
+  _ -> False
+
+-- | True if the input value is stack package-db
+isStackDB :: PackageDB -> Bool
+isStackDB v = case v of
+  StackDB -> True
+  _ -> False
+
 data Conf = Conf
   { keepFlag      :: Bool
   , visibleFlag   :: Bool
@@ -102,7 +124,7 @@ data Conf = Conf
   , memocleanFlag :: Bool
   , autotexyFlag  :: Bool
   , nosandboxFlag :: Bool
-  , stackDbFlag   :: Bool
+  , packageDb     :: Maybe PackageDB
   , werrorFlag    :: Bool
   , unknownFlags  :: [String]
   , inputs        :: [FilePath]
@@ -124,12 +146,13 @@ supportedFlags =
   , ("memoclean" , memocleanFlag)
   , ("autotexy"  , autotexyFlag)
   , ("nosandbox" , nosandboxFlag)
-  , ("stackdb"   , stackDbFlag)
+  , ("cabaldb"   , maybe False isCabalSandboxDB . packageDb)
+  , ("stackdb"   , maybe False isStackDB . packageDb)
   , ("werror"    , werrorFlag)
     ]
 
 readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False False False False False False False False False False False [] [] M.empty
+readConf = go $ Conf False False False False False False False False False False False False False Nothing False [] [] M.empty
   where
     go c [] = c
     go c (x:xs) =
@@ -150,7 +173,8 @@ readConf = go $ Conf False False False False False False False False False False
              "memoclean" -> go (c {memocleanFlag = True}) xs
              "autotexy"  -> go (c {autotexyFlag  = True}) xs
              "nosandbox" -> go (c {nosandboxFlag = True}) xs
-             "stackdb"   -> go (c {stackDbFlag   = True}) xs
+             "cabaldb"   -> go (c {packageDb     = Just CabalSandboxDB}) xs
+             "stackdb"   -> go (c {packageDb     = Just StackDB}) xs
              "werror"    -> go (c {werrorFlag    = True}) xs
              _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
         -- Otherwise, an input file.
@@ -279,34 +303,66 @@ p_writelatex = (WriteLaTeX . pack) <$>
 -- | A 'MemoTree' maps each expression to its reduced form.
 type MemoTree = M.Map Text Text
 
+
+-- | Try to detect cabal sandbox or stack project and get pathes to package DBs.
+--
+-- If ambigous situation is presented (both stack and cabal sandbox is found),
+-- then fail with descriptive message.
+autoDetectSandbox :: Haskintex (Maybe [String])
+autoDetectSandbox = do
+  noSandbox <- nosandboxFlag <$> get
+  if noSandbox
+     then do
+       outputStr "Ignoring sandbox."
+       pure Nothing
+     else do inSandbox <- lift $ doesDirectoryExist ".cabal-sandbox"
+             hasStackFile <- lift $ doesFileExist "stack.yaml"
+             case (inSandbox, hasStackFile) of
+               (True, False) -> do
+                 outputStr "Detected cabal sandbox."
+                 loadCabalSandboxDBPaths
+               (False, True) -> do
+                 outputStr "Detected stack sandbox."
+                 loadStackDBPaths
+               (True, True) -> fail $ "Found both cabal sandbox and stack project. Please, specify which package DB to use with either "
+                 ++ " '-cabaldb' or '-stackdb' flags."
+               (False, False) -> do
+                 outputStr "No sandbox or stack project detected."
+                 pure Nothing
+
+-- | Generate CLI arguments for GHC for package DB using cabal sandbox
+loadCabalSandboxDBPaths :: Haskintex (Maybe [String])
+loadCabalSandboxDBPaths = do
+  outputStr "Using cabal sandbox for package db"
+  sand <- lift $ getDirectoryContents ".cabal-sandbox"
+  let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
+  case pkgdbs of
+    pkgdb : _ -> do
+      outputStr $ "Using sandbox package db: " ++ pkgdb
+      pure . Just $ [".cabal-sandbox/" ++ pkgdb]
+    _ -> do
+      outputStr "Don't use sandbox. Empty .cabal-sandbox"
+      pure Nothing
+
+-- | Generate CLI arguments for GHC for package DB using stack environment
+loadStackDBPaths :: Haskintex (Maybe [String])
+loadStackDBPaths = do
+  outputStr "Using stack environment for package db"
+  let getDBPath s = fmap (filter (/= '\n')) . lift $ readCreateProcess (shell $ "stack path --" ++ s) ""
+  pkgdbSnapshot <- getDBPath "snapshot-pkg-db"
+  pkgdbGlobal <- getDBPath "global-pkg-db"
+  pkgdbLocal <- getDBPath "local-pkg-db"
+  outputStr $ "Using sandbox package db: \n" ++ unlines [pkgdbSnapshot, pkgdbGlobal, pkgdbLocal]
+  pure . Just $ [pkgdbSnapshot, pkgdbGlobal, pkgdbLocal]
+
 -- | Try to detect cabal sandbox and use stack's ones if user specifies the 'stackdb' flag.
 getSandbox :: Haskintex (Maybe [String])
 getSandbox = do
-  stackDb <- stackDbFlag <$> get
-  if stackDb
-     then do let getDBPath s = fmap (filter (/= '\n')) . lift $ readCreateProcess (shell $ "stack path --" ++ s) ""
-             pkgdbSnapshot <- getDBPath "snapshot-pkg-db"
-             pkgdbGlobal <- getDBPath "global-pkg-db"
-             pkgdbLocal <- getDBPath "local-pkg-db"
-             outputStr $ "Using sandbox package db: \n" ++ unlines [pkgdbSnapshot, pkgdbGlobal, pkgdbLocal]
-             pure . Just $ [pkgdbSnapshot, pkgdbGlobal, pkgdbLocal]
-     else do inSandbox <- lift $ doesDirectoryExist ".cabal-sandbox"
-             if inSandbox
-                then do outputStr "Sandbox detected."
-                        noSandbox <- nosandboxFlag <$> get
-                        if noSandbox
-                           then do outputStr "Ignoring sandbox."
-                                   pure Nothing
-                           else do sand <- lift $ getDirectoryContents ".cabal-sandbox"
-                                   let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
-                                   case pkgdbs of
-                                     pkgdb : _ -> do
-                                       outputStr $ "Using sandbox package db: " ++ pkgdb
-                                       pure . Just $ [".cabal-sandbox/" ++ pkgdb]
-                                     _ -> do
-                                       outputStr "Don't use sandbox. Empty .cabal-sandbox"
-                                       pure Nothing
-                 else pure Nothing
+  pkgDbConf <- packageDb <$> get
+  case pkgDbConf of
+    Nothing -> autoDetectSandbox
+    Just CabalSandboxDB -> loadCabalSandboxDBPaths
+    Just StackDB -> loadStackDBPaths
 
 memoreduce :: Typeable t
            => String -- ^ Auxiliar module name
