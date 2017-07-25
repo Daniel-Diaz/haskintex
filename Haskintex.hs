@@ -4,8 +4,7 @@
 module Haskintex (haskintex) where
 
 -- System
-import System.Process (readProcess, readCreateProcess)
-import qualified System.Process as P (proc)
+import System.Process (readProcess, readCreateProcess, shell)
 import System.FilePath
 import System.Directory
 import System.IO (hFlush,stdout)
@@ -280,6 +279,35 @@ p_writelatex = (WriteLaTeX . pack) <$>
 -- | A 'MemoTree' maps each expression to its reduced form.
 type MemoTree = M.Map Text Text
 
+-- | Try to detect cabal sandbox and use stack's ones if user specifies the 'stackdb' flag.
+getSandbox :: Haskintex (Maybe [String])
+getSandbox = do
+  stackDb <- stackDbFlag <$> get
+  if stackDb
+     then do let getDBPath s = fmap (filter (/= '\n')) . lift $ readCreateProcess (shell $ "stack path --" ++ s) ""
+             pkgdbSnapshot <- getDBPath "snapshot-pkg-db"
+             pkgdbGlobal <- getDBPath "global-pkg-db"
+             pkgdbLocal <- getDBPath "local-pkg-db"
+             outputStr $ "Using sandbox package db: \n" ++ unlines [pkgdbSnapshot, pkgdbGlobal, pkgdbLocal]
+             pure . Just $ [pkgdbSnapshot, pkgdbGlobal, pkgdbLocal]
+     else do inSandbox <- lift $ doesDirectoryExist ".cabal-sandbox"
+             if inSandbox
+                then do outputStr "Sandbox detected."
+                        noSandbox <- nosandboxFlag <$> get
+                        if noSandbox
+                           then do outputStr "Ignoring sandbox."
+                                   pure Nothing
+                           else do sand <- lift $ getDirectoryContents ".cabal-sandbox"
+                                   let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
+                                   case pkgdbs of
+                                     pkgdb : _ -> do
+                                       outputStr $ "Using sandbox package db: " ++ pkgdb
+                                       pure . Just $ [".cabal-sandbox/" ++ pkgdb]
+                                     _ -> do
+                                       outputStr "Don't use sandbox. Empty .cabal-sandbox"
+                                       pure Nothing
+                 else pure Nothing
+
 memoreduce :: Typeable t
            => String -- ^ Auxiliar module name
            -> Bool -- ^ Is this expression memorized?
@@ -299,27 +327,8 @@ memoreduce modName isMemo t ty f = do
              setTopLevelModules [modName]
              setImports ["Prelude"]
              interpret e ty
-      -- Sandbox recognition
-      inSandbox <- lift $ doesDirectoryExist ".cabal-sandbox"
-      r <- if inSandbox
-              then do outputStr "Sandbox detected."
-                      noSandbox <- nosandboxFlag <$> get
-                      if noSandbox
-                         then do outputStr "Ignoring sandbox."
-                                 runInterpreter int
-                         else do stackDb <- stackDbFlag <$> get
-                                 if stackDb
-                                    then do pkgdb <- lift $ readCreateProcess (P.proc "stack path" ["--local-pkg-db"]) ""
-                                            outputStr $ "Using sandbox package db: " ++ pkgdb
-                                            unsafeRunInterpreterWithArgs ["-package-db " ++ pkgdb] int
-                                    else do sand <- lift $ getDirectoryContents ".cabal-sandbox"
-                                            let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
-                                            case pkgdbs of
-                                              pkgdb : _ -> do
-                                                outputStr $ "Using sandbox package db: " ++ pkgdb
-                                                unsafeRunInterpreterWithArgs ["-package-db .cabal-sandbox/" ++ pkgdb] int
-                                              _ -> runInterpreter int
-              else runInterpreter int
+      -- Sandbox recognition and executing interpreter
+      r <- maybe (runInterpreter int) (\pkgdbs -> unsafeRunInterpreterWithArgs (("-package-db " ++) <$> pkgdbs) int) =<< getSandbox
       case r of
         Left err -> do
           shouldFail <- werrorFlag <$> get
