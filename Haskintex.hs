@@ -302,28 +302,23 @@ memoreduce modName isMemo t ty f = do
       -- Sandbox recognition
       inSandbox <- lift $ doesDirectoryExist ".cabal-sandbox"
       r <- if inSandbox
-              then do
-                outputStr "Sandbox detected."
-                noSandbox <- nosandboxFlag <$> get
-                if noSandbox
-                  then do
-                    outputStr "Ignoring sandbox."
-                    runInterpreter int
-                  else do
-                    stackDb <- stackDbFlag <$> get
-                    if stackDb
-                      then do
-                        pkgdb <- lift $ readCreateProcess (P.proc "stack path" ["--local-pkg-db"]) ""
-                        outputStr $ "Using sandbox package db: " ++ pkgdb
-                        unsafeRunInterpreterWithArgs ["-package-db " ++ pkgdb] int
-                      else do
-                        sand <- lift $ getDirectoryContents ".cabal-sandbox"
-                        let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
-                        case pkgdbs of
-                          pkgdb : _ -> do
-                            outputStr $ "Using sandbox package db: " ++ pkgdb
-                            unsafeRunInterpreterWithArgs ["-package-db .cabal-sandbox/" ++ pkgdb] int
-                          _ -> runInterpreter int
+              then do outputStr "Sandbox detected."
+                      noSandbox <- nosandboxFlag <$> get
+                      if noSandbox
+                        then do outputStr "Ignoring sandbox."
+                                runInterpreter int
+                        else do stackDb <- stackDbFlag <$> get
+                                if stackDb
+                                  then do pkgdb <- lift $ readCreateProcess (P.proc "stack path" ["--local-pkg-db"]) ""
+                                          outputStr $ "Using sandbox package db: " ++ pkgdb
+                                          unsafeRunInterpreterWithArgs ["-package-db " ++ pkgdb] int
+                                  else do sand <- lift $ getDirectoryContents ".cabal-sandbox"
+                                          let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
+                                          case pkgdbs of
+                                            pkgdb : _ -> do
+                                              outputStr $ "Using sandbox package db: " ++ pkgdb
+                                              unsafeRunInterpreterWithArgs ["-package-db .cabal-sandbox/" ++ pkgdb] int
+                                            _ -> runInterpreter int
               else runInterpreter int
       case r of
         Left err -> do
