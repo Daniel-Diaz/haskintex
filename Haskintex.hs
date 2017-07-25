@@ -4,7 +4,8 @@
 module Haskintex (haskintex) where
 
 -- System
-import System.Process (readProcess)
+import System.Process (readProcess, readCreateProcess)
+import qualified System.Process as P (proc)
 import System.FilePath
 import System.Directory
 import System.IO (hFlush,stdout)
@@ -102,6 +103,8 @@ data Conf = Conf
   , memocleanFlag :: Bool
   , autotexyFlag  :: Bool
   , nosandboxFlag :: Bool
+  , stackDbFlag   :: Bool
+  , werrorFlag    :: Bool
   , unknownFlags  :: [String]
   , inputs        :: [FilePath]
   , memoTree      :: MemoTree
@@ -122,10 +125,12 @@ supportedFlags =
   , ("memoclean" , memocleanFlag)
   , ("autotexy"  , autotexyFlag)
   , ("nosandbox" , nosandboxFlag)
+  , ("stackdb"   , stackDbFlag)
+  , ("werror"    , werrorFlag)
     ]
 
 readConf :: [String] -> Conf
-readConf = go $ Conf False False False False False False False False False False False False False [] [] M.empty
+readConf = go $ Conf False False False False False False False False False False False False False False False [] [] M.empty
   where
     go c [] = c
     go c (x:xs) =
@@ -146,6 +151,8 @@ readConf = go $ Conf False False False False False False False False False False
              "memoclean" -> go (c {memocleanFlag = True}) xs
              "autotexy"  -> go (c {autotexyFlag  = True}) xs
              "nosandbox" -> go (c {nosandboxFlag = True}) xs
+             "stackdb"   -> go (c {stackDbFlag   = True}) xs
+             "werror"    -> go (c {werrorFlag    = True}) xs
              _           -> go (c {unknownFlags = unknownFlags c ++ [flag]}) xs
         -- Otherwise, an input file.
         _ -> go (c {inputs = inputs c ++ [x]}) xs
@@ -207,7 +214,7 @@ p_inserthatex isIO = do
   auto <- lift $ autotexyFlag <$> get
   let v = H.Var () . H.UnQual () . H.Ident ()
       f = if auto then H.App () $ if isIO then H.App () (v "fmap") (v "texy")
-                                          else v "texy" 
+                                          else v "texy"
                   else id
   cons b <$> processExp f (pack h)
 
@@ -300,17 +307,26 @@ memoreduce modName isMemo t ty f = do
                       if noSandbox
                          then do outputStr "Ignoring sandbox."
                                  runInterpreter int
-                         else do sand <- lift $ getDirectoryContents ".cabal-sandbox"
-                                 let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
-                                 case pkgdbs of
-                                   pkgdb : _ -> do
-                                     outputStr $ "Using sandbox package db: " ++ pkgdb
-                                     unsafeRunInterpreterWithArgs ["-package-db .cabal-sandbox/" ++ pkgdb] int
-                                   _ -> runInterpreter int
+                         else do stackDb <- stackDbFlag <$> get
+                                 if stackDb
+                                    then do pkgdb <- lift $ readCreateProcess (P.proc "stack path" ["--local-pkg-db"]) ""
+                                            outputStr $ "Using sandbox package db: " ++ pkgdb
+                                            unsafeRunInterpreterWithArgs ["-package-db " ++ pkgdb] int
+                                    else do sand <- lift $ getDirectoryContents ".cabal-sandbox"
+                                            let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
+                                            case pkgdbs of
+                                              pkgdb : _ -> do
+                                                outputStr $ "Using sandbox package db: " ++ pkgdb
+                                                unsafeRunInterpreterWithArgs ["-package-db .cabal-sandbox/" ++ pkgdb] int
+                                              _ -> runInterpreter int
               else runInterpreter int
       case r of
         Left err -> do
-          outputStr $ "Warning: Error while evaluating the expression.\n"
+          shouldFail <- werrorFlag <$> get
+          if shouldFail
+            then fail $ "Error: failed while evaluating the expression: \n"
+                   ++ errorString err
+            else outputStr $ "Warning: Error while evaluating the expression.\n"
                    ++ errorString err
           return mempty
         Right x -> do
@@ -415,7 +431,7 @@ memoTreeClean = do
   d <- liftIO $ getAppUserDataDirectory "haskintex"
   let fp = d </> "memotree"
   b <- liftIO $ doesFileExist fp
-  when b $ do 
+  when b $ do
     liftIO $ removeFile fp
     outputStr "Info: memotree removed."
 
@@ -467,7 +483,7 @@ ghc modName isMemo t = do
   case p of
     Nothing -> do
       -- Run GHC externally and read the result.
-      r <- lift $ pack . init <$> readProcess "ghc" 
+      r <- lift $ pack . init <$> readProcess "ghc"
                 -- Disable reading of .ghci files.
                 [ "-ignore-dot-ghci"
                 -- Evaluation loading the temporal module.
