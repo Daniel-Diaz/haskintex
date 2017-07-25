@@ -59,7 +59,6 @@ library
                , containers >= 0.5.5
                , binary >= 0.7.1
                , haskell-src-exts >= 1.18.2
-               , shelly >= 1.6
   exposed-modules: Haskintex
   other-modules: Paths_haskintex
   ghc-options: -Wall

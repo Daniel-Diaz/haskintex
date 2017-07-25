@@ -4,7 +4,8 @@
 module Haskintex (haskintex) where
 
 -- System
-import System.Process (readProcess)
+import System.Process (readProcess, readCreateProcess)
+import qualified System.Process as P (proc)
 import System.FilePath
 import System.Directory
 import System.IO (hFlush,stdout)
@@ -50,8 +51,6 @@ import Data.Binary.Get hiding (lookAhead)
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as LB
 import qualified Data.ByteString as SB
--- Shell
-import Shelly (shelly, bash)
 
 -- Syntax
 
@@ -314,9 +313,9 @@ memoreduce modName isMemo t ty f = do
                     stackDb <- stackDbFlag <$> get
                     if stackDb
                       then do
-                        pkgdb <- shelly $ bash "stack path" ["--local-pkg-db"]
-                        outputStr $ "Using sandbox package db: " ++ unpack pkgdb
-                        unsafeRunInterpreterWithArgs ["-package-db " ++ unpack pkgdb, "-package yaml"] int
+                        pkgdb <- lift $ readCreateProcess (P.proc "stack path" ["--local-pkg-db"]) ""
+                        outputStr $ "Using sandbox package db: " ++ pkgdb
+                        unsafeRunInterpreterWithArgs ["-package-db " ++ pkgdb] int
                       else do
                         sand <- lift $ getDirectoryContents ".cabal-sandbox"
                         let pkgdbs = filter (isSuffixOf "packages.conf.d") sand
