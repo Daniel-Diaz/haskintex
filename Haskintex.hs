@@ -4,8 +4,7 @@
 module Haskintex (haskintex) where
 
 -- System
-import System.Process (readProcess, readCreateProcess)
-import qualified System.Process as P (proc)
+import System.Process (readProcess, readCreateProcess, shell)
 import System.FilePath
 import System.Directory
 import System.IO (hFlush,stdout)
@@ -280,14 +279,17 @@ p_writelatex = (WriteLaTeX . pack) <$>
 -- | A 'MemoTree' maps each expression to its reduced form.
 type MemoTree = M.Map Text Text
 
--- | Try to detect cabal sandbox and use stack's one if user specifies the 'stackdb' flag.
-getSandbox :: Haskintex (Maybe String)
+-- | Try to detect cabal sandbox and use stack's ones if user specifies the 'stackdb' flag.
+getSandbox :: Haskintex (Maybe [String])
 getSandbox = do
   stackDb <- stackDbFlag <$> get
   if stackDb
-     then do pkgdb <- lift $ readCreateProcess (P.proc "stack path" ["--local-pkg-db"]) ""
-             outputStr $ "Using sandbox package db: " ++ pkgdb
-             pure . Just $ "-package-db " ++ pkgdb
+     then do let getDBPath s = fmap (filter (/= '\n')) . lift $ readCreateProcess (shell $ "stack path --" ++ s) ""
+             pkgdbSnapshot <- getDBPath "snapshot-pkg-db"
+             pkgdbGlobal <- getDBPath "global-pkg-db"
+             pkgdbLocal <- getDBPath "local-pkg-db"
+             outputStr $ "Using sandbox package db: \n" ++ unlines [pkgdbSnapshot, pkgdbGlobal, pkgdbLocal]
+             pure . Just $ [pkgdbSnapshot, pkgdbGlobal, pkgdbLocal]
      else do inSandbox <- lift $ doesDirectoryExist ".cabal-sandbox"
              if inSandbox
                 then do outputStr "Sandbox detected."
@@ -300,7 +302,7 @@ getSandbox = do
                                    case pkgdbs of
                                      pkgdb : _ -> do
                                        outputStr $ "Using sandbox package db: " ++ pkgdb
-                                       pure . Just $ "-package-db .cabal-sandbox/" ++ pkgdb
+                                       pure . Just $ [".cabal-sandbox/" ++ pkgdb]
                                      _ -> do
                                        outputStr "Don't use sandbox. Empty .cabal-sandbox"
                                        pure Nothing
@@ -326,7 +328,7 @@ memoreduce modName isMemo t ty f = do
              setImports ["Prelude"]
              interpret e ty
       -- Sandbox recognition and executing interpreter
-      r <- maybe (runInterpreter int) (\pkgdb -> unsafeRunInterpreterWithArgs ["-package-db " ++ pkgdb] int) =<< getSandbox
+      r <- maybe (runInterpreter int) (\pkgdbs -> unsafeRunInterpreterWithArgs (("-package-db " ++) <$> pkgdbs) int) =<< getSandbox
       case r of
         Left err -> do
           shouldFail <- werrorFlag <$> get
