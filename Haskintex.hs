@@ -303,6 +303,23 @@ p_writelatex = (WriteLaTeX . pack) <$>
 -- | A 'MemoTree' maps each expression to its reduced form.
 type MemoTree = M.Map Text Text
 
+-- | Search in current directory and all parents dirs for given file.
+-- Return 'True' if found such file, 'False' either way. Search is performed
+-- until root folder is not hit.
+doesFileExistsUp :: FilePath -> IO Bool
+doesFileExistsUp fname = do
+  parents <- getAllParents <$> getCurrentDirectory
+  checks <- mapM (doesFileExist . (</> fname)) parents
+  pure $ or checks
+
+-- | Generate list of all parents of the given path including the path itself.
+getAllParents :: FilePath -> [FilePath]
+getAllParents = go . reverse . splitDirectories
+  where
+    go [] = []
+    go segs = let
+      parent = joinPath $ reverse segs
+      in parent : go (drop 1 segs)
 
 -- | Try to detect cabal sandbox or stack project and get pathes to package DBs.
 --
@@ -316,7 +333,7 @@ autoDetectSandbox = do
        outputStr "Ignoring sandbox."
        pure Nothing
      else do inSandbox <- lift $ doesDirectoryExist ".cabal-sandbox"
-             hasStackFile <- lift $ doesFileExist "stack.yaml"
+             hasStackFile <- lift $ doesFileExistsUp "stack.yaml"
              case (inSandbox, hasStackFile) of
                (True, False) -> do
                  outputStr "Detected cabal sandbox."
