@@ -1,0 +1,427 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<title>hask-in-tex</title>
+<link rel="stylesheet" href="https://rawgithub.com/Daniel-Diaz/hatex-guide/master/hatex.css">
+</head>
+<body>
+<h1 class="title">Hask<i>in</i>TeX</h1>
+<p class="centered"><i>A program to evaluate Haskell code within LaTeX</i></p>
+<p class="centered">Daniel Díaz</p>
+<h1>The <i>haskintex</i> program</h1>
+
+<p>
+The <i>haskintex</i> program is a tool that reads a LaTeX file and evaluates Haskell expressions contained
+in some specific commands and environments. It allows you to define your own functions, use any GHC Haskell language
+extension and, in brief, anything you can do within Haskell. You can freely add any Haskell code you need, and make
+this code appear <i>optionally</i> in the LaTeX output. It is a tiny program, and therefore, easy to understand, use and
+predict.
+</p>
+
+<h1>Installation</h1>
+
+<p>
+To install <i>haskintex</i> from <a href="http://hackage.haskell.org/package/haskintex">Hackage</a>,
+use the <i>cabal</i> program:
+</p>
+
+<pre>
+? cabal update
+? cabal install haskintex
+</pre>
+
+<p>
+This will update your package database and install the latest version of <i>haskintex</i>.
+Otherwise, you can build the current developing version downloading
+<a href="https://github.com/Daniel-Diaz/haskintex/archive/master.zip">its code as a zip file</a>.
+</p>
+
+<p>
+Note that this page will be updated with every new version released to Hackage, so it reflects the features of the
+last released version. If you have a previous version, some of the features explained here may not apply to you.
+To check what version you have installed, run <code>haskintex -help</code>.
+</p>
+
+<h1>How does it work?</h1>
+
+<p>
+Consider the following simple example.
+</p>
+
+<pre>
+\documentclass{article}
+\begin{document}
+I have \evalhaskell{2+3} fingers in my right hand.
+\end{document}
+</pre>
+
+<p>
+If the above LaTeX code is written in <code>foo.htex</code>, after running <code>haskintex foo.htex</code>
+the file <code>foo.tex</code> will be written with:
+</p>
+
+<pre>
+\documentclass{article}
+\begin{document}
+I have \verb`5` fingers in my right hand.
+\end{document}
+</pre>
+
+<p>
+The Haskell code <code>2+3</code> has been evaluated to <code>5</code>, and the result has been enclosed
+in a <code>verb</code> command. The evaluation is done using
+<a href="http://www.haskell.org/ghc">GHC</a>, so it must be installed in order to use <i>haskintex</i>.
+</p>
+
+<p>
+The file <code>foo.htex</code> can be processed running <code>hakintex foo</code> as well. When the given
+input file does not exist, <i>haskintex</i> adds the <code>.htex</code> extension automatically.
+If the file with the added extension does not exist, it throws an error.
+</p>
+
+<p>
+Let's go through another example. The factorial function can be implemented recursively in Haskell.
+</p>
+
+<pre>
+fact :: Int -> Int
+fact 0 = 1
+fact n = n * fact (n-1)
+</pre>
+
+To include this function in the scope of <code>evalhaskell</code> use <code>writehaskell</code> as
+shown below.
+
+<pre>
+\documentclass{article}
+\begin{document}
+\begin{writehaskell}
+fact :: Int -> Int
+fact 0 = 1
+fact n = n * fact (n-1)
+\end{writehaskell}
+While 5 factorial is \evalhaskell{fact 5}, 10 factorial is
+\evalhaskell{fact 10}.
+\end{document}
+</pre>
+
+<p>
+Therefore, to add binding definitions use the <code>writehaskell</code> environment,
+and to evaluate code use <code>evalhaskell</code>. If the output of an evaluation is
+known to be big and it is not desired to be inlined, use <code>evalhaskell</code> as an environment
+instead. For example:
+</p>
+
+<pre>
+\documentclass{article}
+\begin{document}
+This is the list of numbers from 1 to 1000:
+\begin{evalhaskell}
+[1..1000]
+\end{evalhaskell}
+\end{document}
+</pre>
+
+<p>
+Lines in the output of <code>evalhaskell</code> as <i>environment</i> are bounded to 60
+characters. A line break will be introduced if this number is exceeded.
+</p>
+
+<h2>Using HaTeX</h2>
+
+<p>
+It is possible to use any Haskell type within the <code>evalhaskell</code> command or environment.
+Whatever the result is, it will be added to the LaTeX output using the <code>Show</code> instance
+given by the type of the input expression. Sometimes, this is good enough, but probably you will
+end up wanting a more complex way to display your results. To approach this problem, there is a library
+called <i>HaTeX</i> which defines a <code>LaTeX</code> type. Using this library, you can define your
+own functions from and to this type. In the other hand, <i>haskintex</i> lets you use the command
+<code>hatex</code>. This command receives as input a Haskell expression of type <code>LaTeX</code>
+and generates its corresponding LaTeX code as output. It is recommended to take a look at the
+<i>HaTeX</i> library to make yourself an idea of the possibilities you have. As an example, this is
+how you draw a portion of a logarithmic spiral.
+</p>
+
+<pre>
+\documentclass{article}
+\usepackage{tikz}
+\usepackage[utf8]{inputenc}
+\author{Daniel Díaz}
+\title{Embedding HaTeX in \emph{haskintex}}
+\begin{document}
+\maketitle
+Below is the \emph{Spira Mirabilis} inserted using the HaTeX
+package.
+\begin{writehaskell}
+import Text.LaTeX
+import Text.LaTeX.Packages.TikZ.Simple
+
+spiral :: Figure
+spiral = LineWidth (Pt 2) $
+    pathImage 0.01 (0,4) $
+      \t -> ( a * exp t * cos (b*t)
+            , a * exp t * sin (b*t)
+              )
+  where
+    a = 0.1 ; b = 4
+\end{writehaskell}
+\hatex{center $ tikzpicture $ figuretikz spiral}
+\end{document}
+</pre>
+
+<p>
+The output looks like this:
+</p>
+
+<img src="http://daniel-diaz.github.io/projects/haskintex/img/usinghatex.png"></img>
+
+<p>
+The example above uses functions from the <code>Text.LaTeX.Packages.TikZ.Simple</code> module, which deals
+with graphic generation using Ti<i>k</i>Z scripts. You may take a look to its
+<a href="http://hackage.haskell.org/package/HaTeX/docs/Text-LaTeX-Packages-TikZ-Simple.html">API documentation</a>
+to fully
+understand the given example.
+</p>
+
+<h2>Using HaTeX with IO</h2>
+
+<p>
+While the <code>hatex</code> command opens tons of possibilities to generate LaTeX code, it suffers from an unfortunate
+restriction. Since it only accepts expressions of type <code>LaTeX</code>, it will never accept an expression that
+performs IO computations. To solve this, use the <code>iohatex</code> command. It works the same way as the
+<code>hatex</code> command does, but it expects an expression of type <code>IO LaTeX</code> instead. Here an example:
+</p>
+
+<pre>
+\documentclass{article}
+\begin{document}
+\begin{writehaskell}
+import Text.LaTeX
+import Data.Time (getCurrentTime)
+import Control.Applicative ((<$>))
+import Data.String (fromString)
+\end{writehaskell}
+I am testing the \texttt{iohatex} command when the time is \iohatex{fromString . show <$> getCurrentTime}.
+\end{document}
+</pre>
+
+<h1>Including Pragmas</h1>
+
+If you include pragmas with the <code>writehaskell</code> environment and run <i>haskintex</i> with the <code>keep</code>
+flag, you will notice that the pragma is included below the <code>module ... where</code> clause, and therefore it is not
+working. To include pragmas, use the <code>haskellpragmas</code> environment. It would go like this:
+
+<pre>
+\documentclass{article}
+\begin{document}
+\begin{haskellpragmas}
+{-# LANGUAGE OverloadedStrings #-}
+\end{haskellpragmas}
+\begin{writehaskell}
+import Text.LaTeX
+
+overloaded :: LaTeX
+overloaded = "This is an Overloaded String."
+\end{writehaskell}
+\hatex{overloaded}
+\end{document}
+</pre>
+
+<h1>Code ordering</h1>
+
+<p>
+The place where <code>evalhaskell</code> is called does not really matter.
+The function <code>fact</code> can be called <i>before</i> defining it.
+</p>
+
+<pre>
+\documentclass{article}
+\begin{document}
+While 5 factorial is \evalhaskell{fact 5}, 10 factorial is
+\evalhaskell{fact 10}.
+\begin{writehaskell}
+fact :: Int -> Int
+fact 0 = 1
+fact n = n * fact (n-1)
+\end{writehaskell}
+\end{document}
+</pre>
+
+<p>
+Note that this also applies to pragmas. If you include a pragma at the end (see below), it will still apply
+to the Haskell code.
+</p>
+
+<pre>
+\documentclass{article}
+\begin{document}
+\begin{writehaskell}
+import Text.LaTeX
+
+overloaded :: LaTeX
+overloaded = "This is an Overloaded String."
+\end{writehaskell}
+\hatex{overloaded}
+\begin{haskellpragmas}
+{-# LANGUAGE OverloadedStrings #-}
+\end{haskellpragmas}
+\end{document}
+</pre>
+
+<p>
+What <i>haskintex</i> does is to traverse the LaTeX code twice. The first time it creates a Haskell module
+with all the code defined with <code>writehaskell</code> and <code>haskellpragmas</code> environments,
+placing the pragmas at the beginning of the file. In the second pass, it evaluates
+all the <code>evalhaskell</code> calls with the created module imported. Note that this means you have to avoid
+duplicated names.
+</p>
+
+<h1>Visibility</h1>
+
+<p>
+By default, the Haskell code introduced by <code>writehaskell</code> (or <code>haskellpragmas</code>)
+will not show up in the processed LaTeX code. To change this, use the <code>visible</code> option.
+For example:
+</p>
+
+<pre>
+\documentclass{article}
+\begin{document}
+\begin{writehaskell}[visible]
+fact :: Int -> Int
+fact 0 = 1
+fact n = n * fact (n-1)
+\end{writehaskell}
+While 5 factorial is \evalhaskell{fact 5}, 10 factorial is
+\evalhaskell{fact 10}.
+\end{document}
+</pre>
+
+<p>
+A <code>verbatim</code> environment will contain the code. To change the default
+behavior and make Haskell code visible by default, pass the <code>-visible</code> flag when
+invoking <code>haskintex</code>. Use then the <code>hidden</code> option to hide specific
+calls to <code>writehaskell</code> (or <code>haskellpragmas</code>).
+</p>
+
+<pre>
+\documentclass{article}
+\begin{document}
+\begin{writehaskell}[hidden]
+fact :: Int -> Int
+fact 0 = 1
+fact n = n * fact (n-1)
+\end{writehaskell}
+While 5 factorial is \evalhaskell{fact 5}, 10 factorial is
+\evalhaskell{fact 10}.
+\end{document}
+</pre>
+
+<p>
+You can still use the <code>visible</code> option but it will be pretty much useless. However,
+it may be useful if you are switching the <code>-visible</code> flag on and off frequently.
+</p>
+
+<h1>Memorization</h1>
+
+You can tell <code>haskintex</code> to remember the value of an expression to avoid compute
+it twice. This, however, has a drawback: the expression won't be evaluated again, even if
+its actual value changes. These are the tools you can use to control this feature:
+
+<ul>
+
+<li><i>memo option</i>. You can add this option to <code>hatex</code>, <code>iohatex</code>,
+and <code>evalhaskell</code> commands and environments. When the enclosed expression is
+evaluated, its result will be stored in the memo tree (the structure <i>haskintex</i> uses
+internally to store pairs of unevaluated code and its result). The next time the same
+expression is found, if it is marked with <code>memo</code> as well, it won't be evaluated again:
+the stored result will be used instead.
+</li>
+
+<li><i>notmemo option</i>. This option can be applied in the same places than <code>memo</code>.
+It will force a given Haskell expression to be evaluated every time, not using the memo tree.
+</li>
+
+<li><i>memo flag</i>. This flag applies the <code>memo</code> option everywhere it can be applied,
+except for those places where the <code>notmemo</code> option has been specified.
+
+<li><i>memoclean flag</i>. This flag causes <i>haskintex</i> to remove the entire memo tree
+at the end of its execution. This means that if several files are processed in a single
+haskintex call, the memo tree will be removed <i>after</i> processing all the files.
+</li>
+
+</ul>
+
+To sum up: place the <code>memo</code> option to those expressions whose value don't change
+over time and you don't want to compute twice. And let <i>haskintex</i> do the rest.
+Alternatively, use the <code>memo</code> flag and apply the <code>notmemo</code> option
+to those expressions whose value may change over time.
+
+<h1>Flag reference</h1>
+
+<p>
+Below a list of the flags accepted by the program. Any argument starting with <code>-</code>
+will be recognized as a flag, even if it is not defined (in which case, it will have no effect).
+Anything else will be considered an input file. For instance, this is a valid invocation to
+process the file <code>foo.htex</code> verbosely: <code>haskintex foo -verbose</code>.
+</p>
+
+<ul>
+<li><code>debug</code>: Only for debugging purposes. It writes a file with extension .debughtex with the
+AST of the internal representation of the input file <i>haskintex</i> uses.
+</li>
+
+<li><code>help</code>: Show the version of the program and some information, like usage and
+a description of the different flags.
+</li>
+
+<li><code>keep</code>: Do not remove the auxiliary module after the program ends.
+The name of the auxiliary module is the name of the input file preceded by <code>Haskintex_</code>.
+</li>
+
+<li><code>lhs2tex</code>: By default, <i>haskintex</i> uses basic LaTeX <code>verb</code>
+and <code>verbatim</code> declarations for Haskell code. When this flag is enabled, the output
+will be formatted for <a href="http://www.andres-loeh.de/lhs2tex">lhs2TeX</a>.
+</li>
+
+<li><code>manual</code>: This flag will make <i>haskintex</i> write <code>evalhaskell</code>
+and <code>writehaskell</code> outputs unchanged. In other words, no <code>verb</code>,
+<code>verbatim</code>, or <code>code</code> (in case the lhs2tex flag is enabled) declarations
+will be used.
+</li>
+
+<li><code>memo</code>: Unless otherwise specified, every <code>evalhaskell</code>, <code>hatex</code>
+or <code>iohatex</code> command (or environment) will be called with the <code>memo</code> option.
+</li>
+
+<li><code>memoclean</code>: Cleans the memo tree after the execution of <i>haskintex</i>. If
+several files are processed, the memo tree will be cleaned <i>after</i> processing all of
+them. Read more about the memo tree in the <i>Memorization</i> section.
+</li>
+
+<li><code>overwrite</code>: Overwrite the output file if it already exists. If this flag
+is not set, the program will ask before overwriting.
+</li>
+
+<li><code>stdout</code>: Instead of writing the final output to a file, send it to the standard
+output stream (usually, the screen), making possible to redirect the output to another application.
+</li>
+
+<li><code>verbose</code>: While working, print information on the screen about the execution.
+</li>
+
+<li><code>visible</code>: Make Haskell code in <code>writehaskell</code> environments visible by default.
+</li>
+
+</ul>
+
+<!-- <h1>Known issues</h1> -->
+
+<h1>Code repository</h1>
+
+<p>
+The code of <i>haskintex</i> is hosted on <a href="https://github.com/Daniel-Diaz/haskintex">GitHub</a>.
+For suggestions, bug reports, or any other concern, fill an issue at the
+<a href="https://github.com/Daniel-Diaz/haskintex/issues">Issue Tracker</a>.
+</p>
+</body>
