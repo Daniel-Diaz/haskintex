@@ -772,7 +772,11 @@ help = unlines [
   , "              expressions in types other than LaTeX and have haskintex to perform"
   , "              the required transformation."
   , ""
-  , "  -nosandbox  Do not use the sandbox package db even in the presence of one."
+  , "  -nosandbox  Do not use a sandbox package db even in the presence of one."
+  , ""
+  , "  -cabaldb    Use local cabal sandbox."
+  , ""
+  , "  -stackdb    Use local stackage db."
   , ""
   , "Any unsupported flag will be ignored."
   ]
