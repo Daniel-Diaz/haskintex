@@ -564,13 +564,21 @@ ghc modName isMemo t = do
   let p = if isMemo then M.lookup t memt else Nothing
   case p of
     Nothing -> do
+      useStack <- fmap (maybe False isStackDB . packageDb) get
       -- Run GHC externally and read the result.
-      r <- lift $ pack . init <$> readProcess "ghc"
+      r <- if useStack
+        then lift $ pack . init <$> readProcess "stack"
                 -- Disable reading of .ghci files.
-                [ "-ignore-dot-ghci"
+                ["ghc", "--", "-ignore-dot-ghci", 
                 -- Evaluation loading the temporal module.
-                , "-e", e, modName ++ ".hs"
-                  ] []
+                modName ++ ".hs"
+                , "-e", e ] []
+        else lift $ pack . init <$> readProcess "ghc"
+                -- Disable reading of .ghci files.
+                ["-ignore-dot-ghci", 
+                -- Evaluation loading the temporal module.
+                modName ++ ".hs"
+                , "-e", e ] []
       -- If the expression is marked to be memorized, we do so.
       when isMemo $ do
          modify $ \st -> st { memoTree = M.insert t r $ memoTree st }
