@@ -36,7 +36,7 @@ import Data.Version (showVersion)
 -- Lists
 import Data.List (intersperse, isSuffixOf)
 -- GHC
-import Language.Haskell.Interpreter hiding (get)
+import Language.Haskell.Interpreter hiding (get, modName)
 import Language.Haskell.Interpreter.Unsafe (unsafeRunInterpreterWithArgs)
 import Data.Typeable
 import qualified Language.Haskell.Exts.Pretty as H
