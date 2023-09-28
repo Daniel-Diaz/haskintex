@@ -1,3 +1,7 @@
+_This repository has been moved to:_
+
+https://gitlab.com/daniel-casanueva/haskell/haskintex
+
 # The *haskintex* program
 
 The *haskintex* program is a tool that reads a LaTeX file and evaluates Haskell expressions contained
